@@ -30,6 +30,10 @@ import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.event.EventListener
+import org.springframework.retry.RetryCallback
+import org.springframework.retry.policy.SimpleRetryPolicy
+import org.springframework.retry.support.RetryTemplate
+import org.springframework.retry.backoff.FixedBackOffPolicy
 
 
 /**
@@ -87,10 +91,36 @@ class McpSyncServerConfiguration(
      */
     @EventListener(AgentScanningBeanPostProcessorEvent::class)
     fun exposeMcpFunctionality() {
-        val mcpSyncServer = applicationContext.getBean(McpSyncServer::class.java)
-        exposeMcpTools(mcpSyncServer)
-        exposeMcpPrompts(mcpSyncServer)
-        exposeMcpResources(mcpSyncServer)
+        val mcpSyncServer = getMcpSyncServerWithRetry()
+        if (mcpSyncServer != null) {
+            exposeMcpTools(mcpSyncServer)
+            exposeMcpPrompts(mcpSyncServer)
+            exposeMcpResources(mcpSyncServer)
+        } else {
+            logger.error("Failed to obtain McpSyncServer bean after retries. MCP functionality will not be available.")
+        }
+    }
+
+    private fun getMcpSyncServerWithRetry(): McpSyncServer? {
+        val retryTemplate = RetryTemplate()
+
+        val retryPolicy = SimpleRetryPolicy()
+        retryPolicy.maxAttempts = 3
+        retryTemplate.setRetryPolicy(retryPolicy)
+
+        val backOffPolicy = FixedBackOffPolicy()
+        backOffPolicy.backOffPeriod = 1000
+        retryTemplate.setBackOffPolicy(backOffPolicy)
+
+        return try {
+            retryTemplate.execute(RetryCallback<McpSyncServer, Exception> { context ->
+                logger.debug("Attempting to get McpSyncServer bean (attempt {})", context.retryCount + 1)
+                applicationContext.getBean(McpSyncServer::class.java)
+            })
+        } catch (e: Exception) {
+            logger.error("Failed to obtain McpSyncServer bean after {} attempts: {}", retryPolicy.maxAttempts, e.message)
+            null
+        }
     }
 
     private fun exposeMcpResources(mcpSyncServer: McpSyncServer) {
