@@ -27,8 +27,6 @@ import com.embabel.agent.spi.support.InMemoryContextRepository
 import com.embabel.agent.spi.support.SpringContextPlatformServices
 import com.embabel.common.textio.template.TemplateRenderer
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationContext
@@ -56,8 +54,6 @@ internal class DefaultAgentPlatform(
 ) : AgentPlatform {
 
     private val logger = LoggerFactory.getLogger(DefaultAgentPlatform::class.java)
-
-    private val yamlObjectMapper = ObjectMapper(YAMLFactory()).registerKotlinModule()
 
     private val agents: MutableMap<String, Agent> = ConcurrentHashMap()
 
@@ -145,15 +141,17 @@ internal class DefaultAgentPlatform(
 
     override fun runAgentFrom(
         agent: Agent,
+        goal: Goal,
         processOptions: ProcessOptions,
         bindings: Map<String, Any>,
     ): AgentProcess {
-        val agentProcess = createAgentProcess(agent, processOptions, bindings)
+        val agentProcess = createAgentProcess(agent, goal = goal, processOptions, bindings)
         return agentProcess.run()
     }
 
     override fun createAgentProcess(
         agent: Agent,
+        goal: Goal,
         processOptions: ProcessOptions,
         bindings: Map<String, Any>,
     ): AgentProcess {
@@ -163,6 +161,7 @@ internal class DefaultAgentPlatform(
 
         val agentProcess = SimpleAgentProcess(
             agent = agent,
+            goal = goal,
             platformServices = platformServices,
             blackboard = blackboard,
             id = id,
@@ -177,12 +176,14 @@ internal class DefaultAgentPlatform(
 
     override fun createChildProcess(
         agent: Agent,
+        goal: Goal,
         parentAgentProcess: AgentProcess,
     ): AgentProcess {
         val childBlackboard = parentAgentProcess.processContext.blackboard.spawn()
         val processOptions = parentAgentProcess.processContext.processOptions
         val childAgentProcess = SimpleAgentProcess(
             agent = agent,
+            goal = goal,
             platformServices = parentAgentProcess.processContext.platformServices,
             blackboard = childBlackboard,
             id = "${parentAgentProcess.agent.name} >> ${

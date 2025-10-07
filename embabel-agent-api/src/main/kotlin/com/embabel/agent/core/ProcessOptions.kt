@@ -318,7 +318,6 @@ data class ProcessOptions(
     val identities: Identities = Identities(),
     val blackboard: Blackboard? = null,
     val verbosity: Verbosity = Verbosity(),
-    val allowGoalChange: Boolean = true,
     val budget: Budget = Budget(),
     val control: ProcessControl = ProcessControl(
         toolDelay = Delay.NONE,
@@ -407,16 +406,6 @@ data class ProcessOptions(
             val verbosityBuilder = Verbosity.builder()
             consumer.accept(verbosityBuilder)
             this.processOptions = processOptions.copy(verbosity = verbosityBuilder.build())
-            return this
-        }
-
-        /**
-         * Allow or prevent automatic goal adjustments during execution.
-         * @param allowGoalChange true to permit the agent to change goals mid-execution
-         * @return this [Builder]
-         */
-        fun allowGoalChange(allowGoalChange: Boolean): Builder {
-            this.processOptions = processOptions.copy(allowGoalChange = allowGoalChange)
             return this
         }
 

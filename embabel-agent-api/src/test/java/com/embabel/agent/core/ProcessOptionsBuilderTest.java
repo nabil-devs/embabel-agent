@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProcessOptionsBuilderTest {
 
@@ -41,7 +42,6 @@ class ProcessOptionsBuilderTest {
                         .debug(true)
                         .showPlanning(true)
                 )
-                .allowGoalChange(false)
                 .budget(bb -> bb
                         .cost(1)
                         .actions(2)
@@ -63,8 +63,6 @@ class ProcessOptionsBuilderTest {
         assertTrue(po.getVerbosity().getShowLlmResponses());
         assertTrue(po.getVerbosity().getDebug());
         assertTrue(po.getVerbosity().getShowPlanning());
-
-        assertFalse(po.getAllowGoalChange());
 
         assertEquals(1, po.getBudget().getCost());
         assertEquals(2, po.getBudget().getActions());

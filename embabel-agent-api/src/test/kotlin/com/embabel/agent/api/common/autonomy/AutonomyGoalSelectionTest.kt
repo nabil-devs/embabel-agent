@@ -319,7 +319,7 @@ class AutonomyGoalSelectionTest {
 
         // Mock runAgentFrom
         every {
-            agentPlatform.runAgentFrom(any(), any(), any())
+            agentPlatform.runAgentFrom(agent = any(), processOptions = any(), bindings = any())
         } returns mockProcess
         every {
             agentPlatform.platformServices.eventListener

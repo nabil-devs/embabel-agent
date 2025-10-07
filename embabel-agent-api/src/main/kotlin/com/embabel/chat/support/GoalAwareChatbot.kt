@@ -71,9 +71,9 @@ class GoalAwareChatbot(
         ) {
             conversation.addMessage(userMessage)
             val agentProcess = autonomy.agentPlatform.runAgentFrom(
-                chatAgent,
-                ProcessOptions(),
-                emptyMap(),
+                agent = chatAgent,
+                processOptions = ProcessOptions(),
+                bindings = emptyMap(),
             )
             val assistantMessage = agentProcess.lastResult() as? AssistantMessage
                 ?: AssistantMessage("Internal error: Agent did not return an AssistantMessage")

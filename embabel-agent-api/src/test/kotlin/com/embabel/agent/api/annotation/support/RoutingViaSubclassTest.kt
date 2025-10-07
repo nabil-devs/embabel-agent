@@ -52,7 +52,11 @@ class RoutingViaSubclassTest {
 
         val ap = IntegrationTestUtils.dummyAgentPlatform()
         val agentProcess =
-            ap.runAgentFrom(agent, ProcessOptions(), mapOf("it" to UserInput("meaningless-routing")))
+            ap.runAgentFrom(
+                agent = agent,
+                processOptions = ProcessOptions(),
+                bindings = mapOf("it" to UserInput("meaningless-routing"))
+            )
         assertEquals(AgentProcessStatusCode.STUCK, agentProcess.status)
     }
 
@@ -62,7 +66,11 @@ class RoutingViaSubclassTest {
 
         val ap = IntegrationTestUtils.dummyAgentPlatform()
         val agentProcess =
-            ap.runAgentFrom(agent, ProcessOptions(), mapOf("it" to UserInput(routing)))
+            ap.runAgentFrom(
+                agent = agent,
+                processOptions = ProcessOptions(),
+                bindings = mapOf("it" to UserInput(routing)),
+            )
         assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status)
         assertEquals(
             IntentClassificationSuccess(routing), agentProcess.lastResult(),

@@ -29,6 +29,7 @@ internal class SimpleAgentProcess(
     id: String,
     parentId: String?,
     agent: Agent,
+    goal: Goal = agent.goals.firstOrNull() ?: error("Specify goal"),
     processOptions: ProcessOptions,
     blackboard: Blackboard,
     platformServices: PlatformServices,
@@ -37,6 +38,7 @@ internal class SimpleAgentProcess(
     id = id,
     parentId = parentId,
     agent = agent,
+    goal = goal,
     processOptions = processOptions,
     blackboard = blackboard,
     platformServices = platformServices,
@@ -57,7 +59,7 @@ internal class SimpleAgentProcess(
     }
 
     override fun formulateAndExecutePlan(worldState: WorldState): AgentProcess {
-        val plan = planner.bestValuePlanToAnyGoal(system = agent.planningSystem)
+        val plan = planner.planToGoal(actions = agent.actions, goal = goal)
         if (plan == null) {
             logger.info(
                 "❌ Process $id stuck\n" +
@@ -74,14 +76,6 @@ internal class SimpleAgentProcess(
             setStatus(AgentProcessStatusCode.STUCK)
             return this
         }
-
-        if (goal != null && goal?.name != plan.goal.name) {
-            logger.info("Process {} goal changed: {} -> {}", this.id, goal?.name, plan.goal.name)
-            require(processOptions.allowGoalChange) {
-                "Process ${this.id} goal changed from ${goal?.name} to ${plan.goal.name}, but allowGoalChange is false"
-            }
-        }
-        _goal = plan.goal
 
         if (plan.isComplete()) {
             logger.debug(

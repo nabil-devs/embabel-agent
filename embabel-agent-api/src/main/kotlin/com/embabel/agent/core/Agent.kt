@@ -56,6 +56,13 @@ data class Agent(
     ),
 ) : NamedAndDescribed, AssetCoordinates, AgentScope {
 
+    /**
+     * Return a single goal if this agent has one.
+     * It is an error to call this method if not
+     */
+    fun requiredDefaultGoal(): Goal =
+        goals.singleOrNull() ?: error("Agent $name has no default goal: number of goals: ${goals.size}")
+
     @JvmOverloads
     constructor(
         name: String,

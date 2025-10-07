@@ -140,13 +140,21 @@ class AgentPlatformIntegrationTest(
 
         @Test
         fun `process not started`() {
-            val ap = agentPlatform.createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+            val ap = agentPlatform.createAgentProcess(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(),
+                bindings = emptyMap()
+            )
             assertEquals(AgentProcessStatusCode.NOT_STARTED, ap.status)
         }
 
         @Test
         fun `process not started via repository`() {
-            val ap = agentPlatform.createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+            val ap = agentPlatform.createAgentProcess(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(),
+                bindings = emptyMap()
+            )
             val ap2 = agentPlatform.getAgentProcess(ap.id)
             assertNotNull(ap2, "Process should be saved to repository")
             assertEquals(AgentProcessStatusCode.NOT_STARTED, ap2.status)

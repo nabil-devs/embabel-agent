@@ -40,6 +40,7 @@ abstract class AbstractAgentProcess(
     override val id: String,
     override val parentId: String?,
     override val agent: Agent,
+    override val goal: com.embabel.plan.Goal,
     protected val processOptions: ProcessOptions,
     protected val blackboard: Blackboard,
     @get:JsonIgnore
@@ -50,8 +51,6 @@ abstract class AbstractAgentProcess(
     protected val logger: Logger = LoggerFactory.getLogger(this::class.java)
 
     private var _lastWorldState: WorldState? = null
-
-    protected var _goal: com.embabel.plan.Goal? = null
 
     private val _history: MutableList<ActionInvocation> = mutableListOf()
 
@@ -66,8 +65,6 @@ abstract class AbstractAgentProcess(
         get() = _lastWorldState
 
     private val agenticEventListenerToolsStats = AgenticEventListenerToolsStats()
-
-    override val goal: com.embabel.plan.Goal? get() = _goal
 
     override val processContext = ProcessContext(
         platformServices = platformServices.withEventListener(

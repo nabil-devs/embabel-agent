@@ -41,15 +41,18 @@ class AgentInvocationKotlinTest {
         val expected = Bar()
         val invocation: AgentInvocation<Bar> = create(agentPlatform)
 
-        every {agentPlatform.agents()} returns listOf(agent)
-        every {agent.goals} returns setOf(goal)
-        every {agentPlatform.createAgentProcessFrom(
-            agent = agent,
-            processOptions = any(),
-            *arrayOf(foo)
-        )} returns agentProcess
-        every {agentPlatform.start(agentProcess)} returns CompletableFuture.completedFuture(agentProcess)
-        every {agentProcess.last(Bar::class.java)} returns expected
+        every { agentPlatform.agents() } returns listOf(agent)
+        every { agent.goals } returns setOf(goal)
+        every {
+            agentPlatform.createAgentProcessFrom(
+                agent = agent,
+                goal = agent.requiredDefaultGoal(),
+                processOptions = any(),
+                *arrayOf(foo)
+            )
+        } returns agentProcess
+        every { agentPlatform.start(agentProcess) } returns CompletableFuture.completedFuture(agentProcess)
+        every { agentProcess.last(Bar::class.java) } returns expected
 
         val bar: Bar = invocation.invoke(foo)
         assertEquals(
@@ -65,15 +68,17 @@ class AgentInvocationKotlinTest {
         val expected = Bar()
         val invocation: AgentInvocation<Bar> = create(agentPlatform)
 
-        every {agentPlatform.agents()} returns listOf(agent)
-        every {agent.goals} returns setOf(goal)
-        every {agentPlatform.createAgentProcess(
-            agent = agent,
-            processOptions = any(),
-            bindings = map
-        )} returns agentProcess
-        every {agentPlatform.start(agentProcess)} returns CompletableFuture.completedFuture(agentProcess)
-        every {agentProcess.last(Bar::class.java)} returns expected
+        every { agentPlatform.agents() } returns listOf(agent)
+        every { agent.goals } returns setOf(goal)
+        every {
+            agentPlatform.createAgentProcess(
+                agent = agent,
+                processOptions = any(),
+                bindings = map
+            )
+        } returns agentProcess
+        every { agentPlatform.start(agentProcess) } returns CompletableFuture.completedFuture(agentProcess)
+        every { agentProcess.last(Bar::class.java) } returns expected
 
         val bar: Bar = invocation.invoke(map)
         assertEquals(
@@ -89,14 +94,18 @@ class AgentInvocationKotlinTest {
             .options(processOptions)
             .build()
 
-        every {agentPlatform.agents()} returns listOf(agent)
-        every {agent.goals} returns setOf(goal)
-        every {agentPlatform.createAgentProcessFrom(any(),
-            processOptions = processOptions,
-            any()
-        )} returns agentProcess
-        every {agentPlatform.start(agentProcess)} returns CompletableFuture.completedFuture(agentProcess)
-        every {agentProcess.last(Bar::class.java)} returns Bar()
+        every { agentPlatform.agents() } returns listOf(agent)
+        every { agent.goals } returns setOf(goal)
+        every {
+            agentPlatform.createAgentProcessFrom(
+                agent = any(),
+                goal = goal,
+                processOptions = processOptions,
+                any()
+            )
+        } returns agentProcess
+        every { agentPlatform.start(agentProcess) } returns CompletableFuture.completedFuture(agentProcess)
+        every { agentProcess.last(Bar::class.java) } returns Bar()
 
 
         invocation.invoke(Foo())

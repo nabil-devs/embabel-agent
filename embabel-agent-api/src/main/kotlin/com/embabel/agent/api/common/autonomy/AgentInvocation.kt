@@ -204,6 +204,7 @@ internal class DefaultAgentInvocation<T : Any>(
 
         val agentProcess = agentPlatform.createAgentProcessFrom(
             agent = agent,
+            goal = agent.requiredDefaultGoal(),
             processOptions = processOptions,
             *args
         )
@@ -216,7 +217,8 @@ internal class DefaultAgentInvocation<T : Any>(
 
         val agentProcess = agentPlatform.createAgentProcess(
             agent = agent,
-            processOptions,
+            goal = agent.requiredDefaultGoal(),
+            processOptions = processOptions,
             bindings = map
         )
         return agentPlatform.start(agentProcess)

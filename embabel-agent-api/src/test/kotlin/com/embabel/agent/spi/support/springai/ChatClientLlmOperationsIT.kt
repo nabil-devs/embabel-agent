@@ -42,7 +42,11 @@ internal class ChatClientLlmOperationsIT {
         @Test
         fun `sufficient data`() {
             val agentProcess =
-                dummyAgentPlatform().createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+                dummyAgentPlatform().createAgentProcess(
+                    agent = evenMoreEvilWizard(),
+                    processOptions = ProcessOptions(),
+                    bindings = emptyMap(),
+                )
             val r = clientLlmOperations.createObjectIfPossible(
                 """
                 Create a person from this user input, extracting their name and star sign:
@@ -62,7 +66,11 @@ internal class ChatClientLlmOperationsIT {
         @Test
         fun `insufficient data`() {
             val agentProcess =
-                dummyAgentPlatform().createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+                dummyAgentPlatform().createAgentProcess(
+                    agent = evenMoreEvilWizard(),
+                    processOptions = ProcessOptions(),
+                    bindings = emptyMap()
+                )
             val r = clientLlmOperations.createObjectIfPossible(
                 """
                 Create a person from this user input, extracting their name and star sign:

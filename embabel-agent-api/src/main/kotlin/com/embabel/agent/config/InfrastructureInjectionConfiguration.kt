@@ -63,6 +63,7 @@ private fun createExecutingOperationContext(
         description = "Empty agent for operation context injection into $callingClassName",
     ) {
         // No actions, just a placeholder
+        goal("Default goal for $callingClassName", "A default goal")
     }
     return ExecutingOperationContext(
         name = callingClassName,

@@ -77,7 +77,7 @@ interface AgentProcess : Blackboard, Timestamped, Timed, OperationStatus<AgentPr
     /**
      * Goal of this process.
      */
-    val goal: com.embabel.plan.Goal?
+    val goal: com.embabel.plan.Goal
 
     val finished: Boolean
         get() = status in setOf(

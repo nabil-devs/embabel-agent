@@ -154,7 +154,11 @@ class AgentMetadataReaderActionTest {
         assertEquals("magic", action.toolGroups.single().role)
         val ap = IntegrationTestUtils.dummyAgentPlatform()
         val agentProcess =
-            ap.runAgentFrom(metadata as CoreAgent, ProcessOptions(), mapOf("it" to PersonWithReverseTool("John Doe")))
+            ap.runAgentFrom(
+                agent = metadata as CoreAgent,
+                processOptions = ProcessOptions(),
+                bindings = mapOf("it" to PersonWithReverseTool("John Doe"))
+            )
         assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status)
         assertEquals(Frog("John Doe"), agentProcess.lastResult())
     }
@@ -179,7 +183,11 @@ class AgentMetadataReaderActionTest {
         assertEquals("magic", action.toolGroups.single().role)
         val ap = IntegrationTestUtils.dummyAgentPlatform()
         val agentProcess =
-            ap.runAgentFrom(metadata as CoreAgent, ProcessOptions(), mapOf("it" to PersonWithReverseTool("John Doe")))
+            ap.runAgentFrom(
+                agent = metadata as CoreAgent,
+                processOptions = ProcessOptions(),
+                bindings = mapOf("it" to PersonWithReverseTool("John Doe"))
+            )
         assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status)
         assertEquals(Frog("John Doe"), agentProcess.lastResult())
     }
@@ -204,7 +212,11 @@ class AgentMetadataReaderActionTest {
         assertEquals(setOf("magic", "frogs"), action.toolGroups.map { it.role }.toSet())
         val ap = IntegrationTestUtils.dummyAgentPlatform()
         val agentProcess =
-            ap.runAgentFrom(metadata as CoreAgent, ProcessOptions(), mapOf("it" to PersonWithReverseTool("John Doe")))
+            ap.runAgentFrom(
+                agent = metadata as CoreAgent,
+                processOptions = ProcessOptions(),
+                bindings = mapOf("it" to PersonWithReverseTool("John Doe"))
+            )
         assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status)
         assertEquals(Frog("John Doe"), agentProcess.lastResult())
     }
@@ -1049,9 +1061,9 @@ class AgentMetadataReaderActionTest {
             val agent = metadata as CoreAgent
             val agentProcess =
                 ap.runAgentFrom(
-                    agent,
-                    ProcessOptions(),
-                    emptyMap(),
+                    agent = agent,
+                    processOptions = ProcessOptions(),
+                    bindings = emptyMap(),
                 )
             assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status)
             assertEquals(PersonWithReverseTool("Kermit"), agentProcess.lastResult())

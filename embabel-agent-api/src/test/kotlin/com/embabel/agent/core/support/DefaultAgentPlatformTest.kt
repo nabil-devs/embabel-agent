@@ -55,7 +55,11 @@ class DefaultAgentPlatformTest {
     @Test
     fun `starts with empty blackboard`() {
         val dap = raw()
-        val ap = dap.createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+        val ap = dap.createAgentProcess(
+            agent = evenMoreEvilWizard(),
+            processOptions = ProcessOptions(),
+            bindings = emptyMap()
+        )
         assertEquals(0, ap.objects.size)
     }
 
@@ -63,7 +67,7 @@ class DefaultAgentPlatformTest {
     fun `binds parameters to blackboard`() {
         val dap = raw()
         val ap = dap.createAgentProcess(
-            evenMoreEvilWizard(), ProcessOptions(), mapOf(
+            agent = evenMoreEvilWizard(), processOptions = ProcessOptions(), bindings = mapOf(
                 "dog" to Dog("Duke")
             )
         )
@@ -82,9 +86,9 @@ class DefaultAgentPlatformTest {
             context = contextRepository.save(context)
             val dap = raw(contextRepository = contextRepository)
             val ap = dap.createAgentProcess(
-                evenMoreEvilWizard(),
-                ProcessOptions(contextId = ContextId(context.id)),
-                mapOf(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(contextId = ContextId(context.id)),
+                bindings = mapOf(
                     "dog" to Dog("Duke")
                 ),
             )

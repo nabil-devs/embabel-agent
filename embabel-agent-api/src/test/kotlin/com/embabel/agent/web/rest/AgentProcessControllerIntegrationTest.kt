@@ -64,7 +64,11 @@ class AgentProcessControllerIntegrationTest(
 
         @Test
         fun `should find process not started`() {
-            val process = agentPlatform.createAgentProcess(agent = evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+            val process = agentPlatform.createAgentProcess(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(),
+                bindings = emptyMap()
+            )
             val result = mockMvc.get("/api/v1/process/${process.id}")
                 .andExpect {
                     status().isOk()
@@ -77,7 +81,11 @@ class AgentProcessControllerIntegrationTest(
 
         @Test
         fun `should return valid status endpoint`() {
-            val process = agentPlatform.createAgentProcess(agent = evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+            val process = agentPlatform.createAgentProcess(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(),
+                bindings = emptyMap()
+            )
             val result = mockMvc.get("/api/v1/process/${process.id}")
                 .andExpect {
                     status().isOk()
@@ -93,7 +101,11 @@ class AgentProcessControllerIntegrationTest(
 
         @Test
         fun `should return valid SSE endpoint`() {
-            val process = agentPlatform.createAgentProcess(agent = evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+            val process = agentPlatform.createAgentProcess(
+                agent = evenMoreEvilWizard(),
+                processOptions = ProcessOptions(),
+                bindings = emptyMap(),
+            )
             val result = mockMvc.get("/api/v1/process/${process.id}")
                 .andExpect {
                     status().isOk()
@@ -109,7 +121,7 @@ class AgentProcessControllerIntegrationTest(
         @Test
         fun `should find process finished`() {
             val process = agentPlatform.createAgentProcess(
-                agent = evenMoreEvilWizard(), ProcessOptions(), mapOf(
+                agent = evenMoreEvilWizard(), processOptions = ProcessOptions(), bindings = mapOf(
                     "it" to UserInput("Hamish will be consumed!")
                 )
             )
@@ -137,7 +149,11 @@ class AgentProcessControllerIntegrationTest(
 
     @Test
     fun `should kill existing process`() {
-        val agentProcess = agentPlatform.createAgentProcess(evenMoreEvilWizard(), ProcessOptions(), emptyMap())
+        val agentProcess = agentPlatform.createAgentProcess(
+            agent = evenMoreEvilWizard(),
+            processOptions = ProcessOptions(),
+            bindings = emptyMap()
+        )
         val result = mockMvc.delete("/api/v1/process/${agentProcess.id}")
             .andExpect {
                 status().isOk()

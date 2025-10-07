@@ -78,9 +78,24 @@ interface AgentPlatform : AgentScope {
      */
     fun runAgentFrom(
         agent: Agent,
+        goal: Goal = agent.requiredDefaultGoal(),
         processOptions: ProcessOptions = ProcessOptions(),
         bindings: Map<String, Any>,
     ): AgentProcess
+
+    /**
+     * Run agent to the default goal
+     */
+    fun runAgentFrom(
+        agent: Agent,
+        processOptions: ProcessOptions = ProcessOptions(),
+        bindings: Map<String, Any>,
+    ): AgentProcess = runAgentFrom(
+        agent = agent,
+        goal = agent.requiredDefaultGoal(),
+        processOptions = processOptions,
+        bindings = bindings,
+    )
 
     /**
      * Run the given agent with the given input, which will be added
@@ -92,12 +107,14 @@ interface AgentPlatform : AgentScope {
     @Deprecated("Use createAgentProcess and run or start instead")
     fun runAgentWithInput(
         agent: Agent,
+        goal: Goal = agent.requiredDefaultGoal(),
         processOptions: ProcessOptions = ProcessOptions(),
         input: Any,
     ): AgentProcess = runAgentFrom(
-        agent,
-        processOptions,
-        mapOf(IoBinding.DEFAULT_BINDING to input),
+        agent = agent,
+        goal = goal,
+        processOptions = processOptions,
+        bindings = mapOf(IoBinding.DEFAULT_BINDING to input),
     )
 
     /**
@@ -112,6 +129,7 @@ interface AgentPlatform : AgentScope {
      */
     fun createAgentProcess(
         agent: Agent,
+        goal: Goal = agent.requiredDefaultGoal(),
         processOptions: ProcessOptions,
         bindings: Map<String, Any>,
     ): AgentProcess
@@ -124,12 +142,14 @@ interface AgentPlatform : AgentScope {
      */
     fun createAgentProcessFrom(
         agent: Agent,
+        goal: Goal = agent.requiredDefaultGoal(),
         processOptions: ProcessOptions,
         vararg objectsToAdd: Any,
     ): AgentProcess = createAgentProcess(
-        agent,
-        processOptions,
-        emptyMap(),
+        agent = agent,
+        goal = goal,
+        processOptions = processOptions,
+        bindings = emptyMap(),
     ).apply {
         objectsToAdd.forEach { addObject(it) }
     }
@@ -147,6 +167,7 @@ interface AgentPlatform : AgentScope {
 
     fun createChildProcess(
         agent: Agent,
+        goal: Goal = agent.requiredDefaultGoal(),
         parentAgentProcess: AgentProcess,
     ): AgentProcess
 

@@ -51,6 +51,7 @@ class SimpleAgentBuilderTest {
             var ap = IntegrationTestUtils.dummyAgentPlatform();
             var result = ap.runAgentFrom(
                     agent,
+                    agent.requiredDefaultGoal(),
                     ProcessOptions.DEFAULT,
                     Map.of("it", new UserInput("input"))
             );
@@ -87,6 +88,7 @@ class SimpleAgentBuilderTest {
             var ap = IntegrationTestUtils.dummyAgentPlatform();
             var result = ap.runAgentFrom(
                     agent,
+                    agent.requiredDefaultGoal(),
                     ProcessOptions.DEFAULT,
                     Map.of("it", new Combined("James", 55))
             );
