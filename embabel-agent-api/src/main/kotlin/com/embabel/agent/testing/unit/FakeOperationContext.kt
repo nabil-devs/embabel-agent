@@ -31,7 +31,7 @@ val DummyAgent = Agent(
     provider = EMBABEL_PROVIDER,
     description = "A dummy agent for testing purposes",
     actions = emptyList(),
-    goals = emptySet(),
+    goals = setOf(Goal("Do nothing", "Do nothing")),
 )
 
 /**

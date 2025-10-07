@@ -49,7 +49,7 @@ public class AgentInvocationJavaTest {
         when(agent.getGoals()).thenReturn(Set.of(goal));
         when(agentPlatform.createAgentProcessFrom(
                 eq(agent),
-                agent.requiredDefaultGoal(),
+                any(),
                 any(ProcessOptions.class),
                 eq(foo)
         )).thenReturn(agentProcess);
@@ -75,7 +75,7 @@ public class AgentInvocationJavaTest {
         when(agent.getGoals()).thenReturn(Set.of(goal));
         when(agentPlatform.createAgentProcess(
                 eq(agent),
-                agent.requiredDefaultGoal(),
+                eq(goal),
                 any(ProcessOptions.class),
                 eq(bindings)
         )).thenReturn(agentProcess);
@@ -102,7 +102,7 @@ public class AgentInvocationJavaTest {
         when(agent.getGoals()).thenReturn(Set.of(goal));
         when(agentPlatform.createAgentProcessFrom(
                 eq(agent),
-                eq(agent.requiredDefaultGoal()),
+                any(),
                 assertArg(processOptions -> assertTrue(processOptions.getVerbosity().getDebug())),
                 any()
         )).thenReturn(agentProcess);

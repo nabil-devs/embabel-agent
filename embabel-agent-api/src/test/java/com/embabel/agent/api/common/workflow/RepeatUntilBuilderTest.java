@@ -41,23 +41,7 @@ class RepeatUntilBuilderTest {
     record Person(String name, int age) {
     }
 
-    public static class Report {
-        private final String content;
-
-        public Report(String content) {
-            this.content = content;
-        }
-
-        public String getContent() {
-            return content;
-        }
-
-        @Override
-        public String toString() {
-            return "Report{" +
-                    "content='" + content + '\'' +
-                    '}';
-        }
+    public record Report(String content) {
     }
 
     @Test
@@ -224,17 +208,18 @@ class RepeatUntilBuilderTest {
 
         @Test
         void terminatesItselfGivenInputAndValidEnclosingAction() {
-            AgentMetadataReader reader = new AgentMetadataReader();
+            var reader = new AgentMetadataReader();
             var agent = (com.embabel.agent.core.Agent) reader.createAgentMetadata(new ValidRepeatUntilTerminatesOKConsumer());
             var ap = IntegrationTestUtils.dummyAgentPlatform();
             var result = ap.runAgentFrom(
                     agent,
+                    agent.getGoals().iterator().next(),
                     ProcessOptions.DEFAULT,
                     Map.of("it", new UserInput("input"), "person", new Person("John Doe", 30))
             );
             assertEquals(AgentProcessStatusCode.COMPLETED, result.getStatus());
             assertTrue(result.lastResult() instanceof Report);
-            assertEquals(((Report) result.lastResult()).getContent(), "John Doe 30",
+            assertEquals(((Report) result.lastResult()).content(), "John Doe 30",
                     "Expected Person to be used as input for report creation");
         }
 
@@ -260,7 +245,7 @@ class RepeatUntilBuilderTest {
             );
             assertEquals(AgentProcessStatusCode.COMPLETED, result.getStatus());
             assertTrue(result.lastResult() instanceof Report);
-            assertEquals(((Report) result.lastResult()).getContent(), "John Doe 30",
+            assertEquals(((Report) result.lastResult()).content(), "John Doe 30",
                     "Expected Person to be used as input for report creation");
         }
 

@@ -27,6 +27,8 @@ fun <I, O : Any> asTransformation(
 ) = Transformation<I, O> {
     val childAgentProcess = it.agentPlatform().createChildProcess(
         agent = agent,
+        goal = agent.goals.find { goal -> goal.outputType?.isAssignableFrom(outputClass) ?: false }
+            ?: error("Agent ${agent.name} has no goals returning ${outputClass.name}"),
         parentAgentProcess = it.agentProcess,
     )
     val childProcessResult = childAgentProcess.run()

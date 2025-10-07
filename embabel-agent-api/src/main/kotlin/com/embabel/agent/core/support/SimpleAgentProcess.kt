@@ -29,7 +29,7 @@ internal class SimpleAgentProcess(
     id: String,
     parentId: String?,
     agent: Agent,
-    goal: Goal = agent.goals.firstOrNull() ?: error("Specify goal"),
+    goal: Goal = agent.requiredDefaultGoal(),
     processOptions: ProcessOptions,
     blackboard: Blackboard,
     platformServices: PlatformServices,

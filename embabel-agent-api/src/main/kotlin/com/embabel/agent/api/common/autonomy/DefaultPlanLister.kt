@@ -16,6 +16,7 @@
 package com.embabel.agent.api.common.autonomy
 
 import com.embabel.agent.core.AgentPlatform
+import com.embabel.agent.core.Goal
 import com.embabel.agent.core.ProcessOptions
 import com.embabel.plan.Plan
 import com.embabel.plan.goap.GoapPlanner
@@ -44,6 +45,7 @@ class DefaultPlanLister(
         val dummyAgentProcess = agentPlatform.createAgentProcess(
             processOptions = processOptions,
             agent = uberAgent,
+            goal = Goal("thing", "one"),
             bindings = bindings,
         )
         val planner = dummyAgentProcess.planner as? GoapPlanner

@@ -61,7 +61,8 @@ data class Agent(
      * It is an error to call this method if not
      */
     fun requiredDefaultGoal(): Goal =
-        goals.singleOrNull() ?: error("Agent $name has no default goal: number of goals: ${goals.size}")
+        goals.singleOrNull()
+            ?: error("Agent $name has no default goal: found ${goals.size} goals - ${goals.map { it.name }.sorted()}")
 
     @JvmOverloads
     constructor(
