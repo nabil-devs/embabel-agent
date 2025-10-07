@@ -94,6 +94,7 @@ class AgentInvocationKotlinTest {
             .options(processOptions)
             .build()
 
+        every { agent.requiredDefaultGoal() } returns goal
         every { agentPlatform.agents() } returns listOf(agent)
         every { agent.goals } returns setOf(goal)
         every {
@@ -106,8 +107,6 @@ class AgentInvocationKotlinTest {
         } returns agentProcess
         every { agentPlatform.start(agentProcess) } returns CompletableFuture.completedFuture(agentProcess)
         every { agentProcess.last(Bar::class.java) } returns Bar()
-
-
         invocation.invoke(Foo())
     }
 

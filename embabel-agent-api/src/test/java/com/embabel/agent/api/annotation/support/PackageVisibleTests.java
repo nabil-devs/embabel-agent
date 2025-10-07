@@ -22,10 +22,7 @@ import com.embabel.agent.api.annotation.Condition;
 import com.embabel.agent.api.common.OperationContext;
 import com.embabel.agent.api.common.PlatformServices;
 import com.embabel.agent.channel.DevNullOutputChannel;
-import com.embabel.agent.core.ActionStatusCode;
-import com.embabel.agent.core.AgentProcessStatusCode;
-import com.embabel.agent.core.ProcessContext;
-import com.embabel.agent.core.ProcessOptions;
+import com.embabel.agent.core.*;
 import com.embabel.agent.core.support.InMemoryBlackboard;
 import com.embabel.agent.core.support.SimpleAgentProcess;
 import org.junit.jupiter.api.Test;
@@ -59,7 +56,7 @@ class PackageVisibleTests {
                 "provider",
                 DEFAULT_VERSION,
                 "description",
-                Set.of(),
+                Set.of(Goal.createInstance("", "", null)),
                 List.of(action),
                 Set.of()
         );

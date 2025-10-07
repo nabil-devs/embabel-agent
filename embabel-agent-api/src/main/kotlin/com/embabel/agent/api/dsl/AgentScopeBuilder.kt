@@ -471,7 +471,7 @@ data class AgentScopeBuilder<O>(
         val withExtraGoal = AgentScope(
             name = name,
             actions = actions,
-            goals = goals + Goal(
+            goals = goals + Goal.createInstance(
                 name = name,
                 description = "description",
                 inputs = setOf(

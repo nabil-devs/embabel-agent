@@ -121,6 +121,28 @@ data class Goal(
             )
         }
 
+        @JvmStatic
+        @JvmOverloads
+        fun createInstance(
+            name: String,
+            description: String,
+            satisfiedBy: Class<*>? = null,
+            requires: Set<Class<*>> = if (satisfiedBy != null) {
+                setOf(satisfiedBy)
+            } else {
+                emptySet()
+            },
+            inputs: Set<IoBinding> = requires.map {
+                IoBinding(
+                    type = it,
+                )
+            }.toSet(),
+            pre: List<Condition> = emptyList(),
+            value: Double = 0.0,
+            tags: Set<String> = emptySet(),
+            examples: Set<String> = emptySet(),
+        ): Goal = invoke(name, description, satisfiedBy, requires, inputs, pre, value, tags, examples)
+
         operator fun invoke(
             name: String,
             description: String,

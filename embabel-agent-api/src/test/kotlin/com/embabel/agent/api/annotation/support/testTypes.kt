@@ -239,10 +239,12 @@ class ConditionsFromBlackboard {
 @Agent(description = "one transformer action only")
 class OneTransformerActionOnly {
 
+    @AchievesGoal(description = "Creating a person")
     @Action(cost = 500.0)
     fun toPerson(userInput: UserInput): PersonWithReverseTool {
         return PersonWithReverseTool(userInput.content)
     }
+
 
 }
 

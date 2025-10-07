@@ -108,8 +108,9 @@ class AutonomyGoalSelectionTest {
                 goals = setOf(testGoal),
             )
         ) {
-            // Only override the problematic infoString method
+            // Override the problematic infoString method
             every { infoString(any()) } returns "TestAgent() - spied"
+            every { requiredDefaultGoal() } returns testGoal
         }
 
         // Mock the scope
@@ -135,7 +136,7 @@ class AutonomyGoalSelectionTest {
         every {
             agentPlatform.createAgentProcess(
                 processOptions = any(),
-                agent = any(),
+                agent = eq(realAgent),
                 bindings = any<Map<String, Any>>()
             )
         } returns testProcess

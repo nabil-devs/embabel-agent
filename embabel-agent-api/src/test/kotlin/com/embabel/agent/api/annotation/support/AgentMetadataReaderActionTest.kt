@@ -330,7 +330,7 @@ class AgentMetadataReaderActionTest {
             provider = "provider",
             actions = listOf(action),
             domainTypes = emptyList(),
-            goals = emptySet(),
+            goals = setOf(Goal("", "")),
             description = "whatever",
         )
         val platformServices = dummyPlatformServices()
@@ -426,7 +426,7 @@ class AgentMetadataReaderActionTest {
             provider = "provider",
             actions = listOf(action),
             domainTypes = emptyList(),
-            goals = emptySet(),
+            goals = setOf(Goal("", "")),
             description = "whatever",
         )
         val platformServices = dummyPlatformServices()
