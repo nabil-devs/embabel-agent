@@ -15,6 +15,8 @@
  */
 package com.embabel.agent.api.common.autonomy
 
+import com.embabel.agent.api.dsl.SnakeMeal
+import com.embabel.agent.api.dsl.evenMoreEvilWizard
 import com.embabel.agent.core.*
 import com.embabel.agent.domain.io.UserInput
 import com.embabel.agent.domain.library.HasContent
@@ -22,6 +24,7 @@ import com.embabel.agent.event.AgenticEventListener
 import com.embabel.agent.spi.Ranking
 import com.embabel.agent.spi.Rankings
 import com.embabel.agent.testing.integration.FakeRanker
+import com.embabel.agent.testing.integration.IntegrationTestUtils.dummyAgentPlatform
 import com.embabel.agent.testing.integration.forAutonomyTesting
 import com.embabel.common.core.types.Described
 import com.embabel.common.core.types.Named
@@ -113,34 +116,19 @@ class AutonomyGoalSelectionTest {
             every { requiredDefaultGoal() } returns testGoal
         }
 
-        // Mock the scope
-        val agentScope = mockk<AgentScope>()
-        every { agentScope.goals } returns setOf(testGoal)
-        every { agentScope.createAgent(any(), any(), any()) } returns realAgent
-
         // Mock process with expected return value
         val testProcess = mockk<AgentProcess>()
-        val testOutput = object : HasContent {
-            override val content = "Test output content"
-        }
-
         // Configure process to return COMPLETED status
         // This tests that DynamicExecutionResult.fromProcessStatus correctly handles the status
         every { testProcess.status } returns AgentProcessStatusCode.COMPLETED
 
         // Configure the result to be returned
-        every { testProcess.lastResult() } returns testOutput
 
-        // Mock platform to return our test process
-        val agentPlatform = mockk<AgentPlatform>()
-        every {
-            agentPlatform.createAgentProcess(
-                processOptions = any(),
-                agent = eq(realAgent),
-                bindings = any<Map<String, Any>>()
-            )
-        } returns testProcess
-        every { testProcess.run() } returns testProcess
+        val eventListener = mockk<AgenticEventListener>(relaxUnitFun = true)
+
+        val agentScope = evenMoreEvilWizard()
+        val agentPlatform = dummyAgentPlatform(listener = eventListener)
+        agentPlatform.deploy(agentScope)
 
         // Create a more realistic ranker that returns varied confidence scores
         // This better tests the score comparison logic
@@ -153,7 +141,7 @@ class AutonomyGoalSelectionTest {
                 // Create a map of rankings with different scores
                 val rankings = rankables.mapIndexed { index, item ->
                     val score = when (item.name) {
-                        "testGoal" -> 0.8  // High score for our test goal (above threshold)
+                        "done" -> 0.8  // High score for our test goal (above threshold)
                         else -> 0.3        // Low score for any other goals (below threshold)
                     }
                     Ranking(item, score)
@@ -162,12 +150,6 @@ class AutonomyGoalSelectionTest {
             }
         }
 
-        // Create event listener mock to verify event publication
-        val eventListener = mockk<AgenticEventListener>(relaxUnitFun = true)
-
-        every {
-            agentPlatform.platformServices.eventListener
-        } returns eventListener
 
         // Create the Autonomy instance to test with different thresholds
         // to verify the comparison logic is working
@@ -190,8 +172,7 @@ class AutonomyGoalSelectionTest {
 
         // Verify the result
         assertNotNull(result, "Result should not be null")
-        assertEquals(testOutput, result.output, "Output should match expected")
-        assertEquals(testProcess, result.agentProcess, "Process should match expected")
+        assertInstanceOf(SnakeMeal::class.java, result.output, "Output should match expected")
 
         // Verify the key method interactions
         verify {
@@ -207,7 +188,7 @@ class AutonomyGoalSelectionTest {
             // Verify that the chosen agent was executed
             agentPlatform.createAgentProcess(
                 processOptions = any(),
-                agent = any(),
+                agent = agentScope,
                 bindings = any()
             )
             testProcess.run()
