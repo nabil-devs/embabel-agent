@@ -18,6 +18,7 @@ package com.embabel.agent.api.common.support
 import com.embabel.agent.api.common.SomeOf
 import com.embabel.agent.api.common.Transformation
 import com.embabel.agent.api.common.TransformationActionContext
+import com.embabel.agent.api.common.workflow.WorkflowRunner
 import com.embabel.agent.core.*
 import com.embabel.agent.core.support.AbstractAction
 import com.embabel.plan.CostComputation
@@ -67,7 +68,7 @@ class MultiTransformationAction<O : Any>(
                 ?: throw IllegalArgumentException("Input ${it.name} of type ${it.type} not found in process context")
         }
         logger.debug("Resolved action {} inputs {}", name, inputValues)
-        val output = block.transform(
+        val rawOutput = block.transform(
             TransformationActionContext(
                 input = inputValues,
                 processContext = processContext,
@@ -76,14 +77,16 @@ class MultiTransformationAction<O : Any>(
                 action = this,
             )
         )
-        if (output != null && !(output is Unit || output::class.java == Void::class.java)) {
+        if (rawOutput != null && !(rawOutput is Unit || rawOutput::class.java == Void::class.java)) {
+            // Process the output through WorkflowRunner to handle nested workflows
+            val output = WorkflowRunner.DEFAULT.processOutput(rawOutput, processContext)
             bindOutput(processContext, output)
         }
     }
 
     private fun bindOutput(
         processContext: ProcessContext,
-        output: O,
+        output: Any,
     ) {
         if (!outputClass.isInstance(output)) {
             throw IllegalArgumentException(

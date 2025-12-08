@@ -23,6 +23,7 @@ import com.embabel.agent.api.common.OperationContext
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
+import com.embabel.agent.api.common.workflow.Workflow
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
 import com.embabel.agent.core.support.NIRVANA
@@ -32,6 +33,7 @@ import com.embabel.agent.spi.validation.AgentStructureValidator
 import com.embabel.agent.spi.validation.AgentValidationManager
 import com.embabel.agent.spi.validation.DefaultAgentValidationManager
 import com.embabel.agent.spi.validation.GoapPathToCompletionValidator
+import java.lang.reflect.ParameterizedType
 import com.embabel.common.core.types.Semver
 import com.embabel.common.util.NameUtils
 import com.embabel.common.util.loggerFor
@@ -69,12 +71,18 @@ internal data class AgenticInfo(
     val embabelComponentAnnotation: EmbabelComponent? = targetType.getAnnotation(EmbabelComponent::class.java)
     val agentAnnotation: Agent? = targetType.getAnnotation(Agent::class.java)
 
+    /**
+     * Does this type implement Workflow interface?
+     */
+    val isWorkflow: Boolean = Workflow::class.java.isAssignableFrom(targetType)
+
     fun isAgent(): Boolean = agentAnnotation != null
 
     /**
      * Is this type agentic at all?
+     * True if it has @EmbabelComponent, @Agent, or implements Workflow interface.
      */
-    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null
+    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isWorkflow
 
     fun validationErrors(): Collection<String> {
         val errors = mutableListOf<String>()
@@ -187,6 +195,17 @@ class AgentMetadataReader(
             if (plannerType == PlannerType.UTILITY) {
                 // Synthetic goal for utility-based agents
                 add(NIRVANA)
+            }
+            // For Workflow implementations, add a goal based on the outputType
+            if (agenticInfo.isWorkflow && instance is Workflow<*>) {
+                val workflowOutputType = instance.outputType
+                add(
+                    AgentCoreGoal(
+                        name = "workflow_output_${workflowOutputType.simpleName}",
+                        description = "Produce ${workflowOutputType.simpleName} from workflow",
+                        outputType = JvmType(workflowOutputType),
+                    )
+                )
             }
         }
 
@@ -446,15 +465,19 @@ class AgentMetadataReader(
     ): AgentCoreGoal? {
         val actionAnnotation = method.getAnnotation(Action::class.java)
         val goalAnnotation = method.getAnnotation(AchievesGoal::class.java) ?: return null
+
+        // Resolve the effective output type - if it's a Workflow<O>, use O instead
+        val effectiveOutputType = resolveEffectiveOutputType(method.returnType)
+
         val inputBinding = IoBinding(
             name = actionAnnotation.outputBinding,
-            type = method.returnType.name,
+            type = effectiveOutputType.name,
         )
         return AgentCoreGoal(
             name = nameGenerator.generateName(instance, method.name),
             description = goalAnnotation.description,
             inputs = setOf(inputBinding),
-            outputType = JvmType(method.returnType),
+            outputType = JvmType(effectiveOutputType),
             value = { goalAnnotation.value },
             // Add precondition of the action having run
             pre = setOf(Rerun.hasRunCondition(action)) + action.preconditions.keys.toSet(),
@@ -465,6 +488,38 @@ class AgentMetadataReader(
                 startingInputTypes = goalAnnotation.export.startingInputTypes.map { it.java }.toSet(),
             )
         )
+    }
+
+    /**
+     * Resolve the effective output type for an action method.
+     * If the return type implements Workflow<O>, extract O from the generic type.
+     * Otherwise, return the method's return type directly.
+     */
+    private fun resolveEffectiveOutputType(returnType: Class<*>): Class<*> {
+        if (!Workflow::class.java.isAssignableFrom(returnType)) {
+            return returnType
+        }
+
+        // Find the Workflow interface in the class hierarchy and extract its type argument
+        for (genericInterface in returnType.genericInterfaces) {
+            if (genericInterface is ParameterizedType &&
+                Workflow::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
+            ) {
+                val typeArg = genericInterface.actualTypeArguments.firstOrNull()
+                if (typeArg is Class<*>) {
+                    logger.debug(
+                        "Action returns Workflow<{}>, using {} as effective output type",
+                        typeArg.simpleName,
+                        typeArg.simpleName
+                    )
+                    return typeArg
+                }
+            }
+        }
+
+        // If we couldn't extract the type argument, just use the workflow class
+        logger.debug("Could not extract output type from Workflow, using {} directly", returnType.simpleName)
+        return returnType
     }
 }
 

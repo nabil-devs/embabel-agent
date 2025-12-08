@@ -1,0 +1,343 @@
+[[reference.planners]]
+=== Choosing a Planner
+
+Embabel supports multiple planning strategies.
+All are deterministic, but their behaviour differs--although it is always predictable.
+
+All planning strategies are entirely typesafe in Java or Kotlin.
+
+The planning strategies currently supported out of the box are:
+
+[cols="1,2,3",options="header"]
+|===
+|Planner |Best For |Description
+
+|*GOAP* (default)
+|Business processes with defined outputs
+|Goal-oriented, deterministic planning. Plans a path from current state to goal using preconditions and effects.
+
+|*Utility*
+|Exploration and event-driven systems
+|Selects the highest-value available action at each step. Ideal when you don't know the outcome upfront.
+|===
+
+TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested GOAP flow.
+Nested workflows are good for looping behaviors, multi-phase processes, and sub-workflows with their own planning.
+
+As most of the documentation covers GOAP, this section discusses the alternative planners and nested workflows.
+
+[[reference.planners__utility]]
+==== Utility AI
+
+https://en.wikipedia.org/wiki/Utility_system[Utility AI] selects the action with the highest _net value_ from all available actions at each step.
+Unlike GOAP, which plans a path to a goal, Utility AI makes greedy decisions based on immediate value.
+
+Utility AI excels in *exploratory scenarios* where you don't know exactly what you want to achieve.
+Consider a GitHub issue triage system: when a new issue arrives, you don't have a predetermined goal.
+Instead, you want to react appropriately based on the issue's characteristics--maybe label it, maybe respond, maybe escalate.
+The "right" action depends on what you discover as you process it.
+
+This makes Utility AI ideal for scenarios where:
+
+* There is no clear end goal--you're exploring possibilities
+* Multiple actions could be valuable depending on context
+* You want to respond to changing conditions as they emerge
+* The best outcome isn't known upfront
+
+===== When to Use Utility AI
+
+* *Event-driven systems*: React to incoming events (issues, stars, webhooks) with the most appropriate action
+* *Chatbots*: Where the platform provides multiple response options and selects the best one
+* *Exploration*: When you want to discover what's possible rather than achieve a specific goal
+
+===== Using Utility AI with `@EmbabelComponent`
+
+For Utility AI, actions are typically provided via `@EmbabelComponent` rather than `@Agent`.
+This allows the _platform_ to select actions across multiple components based on utility, rather than constraining actions to a single agent.
+
+Here's an example from the Shepherd project that reacts to GitHub events:
+
+[source,kotlin]
+----
+@EmbabelComponent  // <1>
+class IssueActions(
+    val properties: ShepherdProperties,
+    private val communityDataManager: CommunityDataManager,
+    private val gitHubUpdater: GitHubUpdater,
+) {
+
+    @Action(outputBinding = "ghIssue")  // <2>
+    fun saveNewIssue(ghIssue: GHIssue, context: OperationContext): GHIssue? {
+        val existing = communityDataManager.findIssueByGithubId(ghIssue.id)
+        if (existing == null) {
+            val issueEntityStatus = communityDataManager.saveAndExpandIssue(ghIssue)
+            context += issueEntityStatus  // <3>
+            return ghIssue
+        }
+        return null  // <4>
+    }
+
+    @Action(
+        pre = ["spel:newEntity.newEntities.?[#this instanceof T(com.embabel.shepherd.domain.Issue)].size() > 0"]  // <5>
+    )
+    fun reactToNewIssue(
+        ghIssue: GHIssue,
+        newEntity: NewEntity<*>,
+        ai: Ai
+    ): IssueAssessment {
+        return ai
+            .withLlm(properties.triageLlm)
+            .creating(IssueAssessment::class.java)
+            .fromTemplate("first_issue_response", mapOf("issue" to ghIssue))  // <6>
+    }
+
+    @Action(pre = ["spel:issueAssessment.urgency > 0.0"])  // <7>
+    fun heavyHitterIssue(issue: GHIssue, issueAssessment: IssueAssessment) {
+        // Take action on high-urgency issues
+    }
+}
+----
+
+<1> `@EmbabelComponent` contributes actions to the platform, not a specific agent
+<2> `outputBinding` names the result for later actions to reference
+<3> Add entity status to context, making it available to subsequent actions
+<4> Returning `null` prevents further actions from firing for this issue
+<5> SpEL precondition: only fire if new issues were created
+<6> Use AI to assess the issue via a template
+<7> This action only fires if the assessment shows urgency > 0
+
+The platform selects which action to run based on:
+
+1. Which preconditions are satisfied (type availability + SpEL conditions)
+2. The `cost` and `value` parameters on `@Action` (net value = value - cost)
+
+===== Action Cost and Value
+
+The `@Action` annotation supports `cost` and `value` parameters (both 0.0 to 1.0):
+
+[source,kotlin]
+----
+@Action(
+    cost = 0.1,   // <1>
+    value = 0.8   // <2>
+)
+fun highValueAction(input: Input): Output {
+    // Action implementation
+}
+----
+
+<1> Cost to execute (0.0 to 1.0) - lower is cheaper
+<2> Value when executed (0.0 to 1.0) - higher is more valuable
+
+The Utility planner calculates _net value_ as `value - cost` and selects the action with the highest net value from all available actions.
+
+===== The Nirvana Goal
+
+Utility AI supports a special "Nirvana" goal that is never satisfied.
+This keeps the process running, continuously selecting the highest-value available action until no actions are available.
+
+===== Extensibility
+
+Utility AI fosters extensibility.
+For example, multiple groups within an organization can contribute their own `@EmbabelComponent` classes with actions that bring their own expertise to enhance behaviours around shared types, while retaining the ability to own and control their own extended model.
+
+[[reference.planners__workflows]]
+==== Nested Workflows
+
+Nested workflows provide explicit sub-processes within any agent.
+*Any action can enter a nested workflow by returning a class that implements the `Workflow<O>` interface.*
+This works with both GOAP and Utility planners--there is no separate "state machine planner."
+
+Unlike LangGraph, Embabel workflows are fully typesafe and enjoy the benefits of GOAP planning within each workflow.
+
+===== When to Use Nested Workflows
+
+* *Workflows with loops*: Human-in-the-loop feedback cycles, retry logic
+* *Multi-phase processes*: Where each phase has distinct actions and data
+* *Complex branching*: Where different paths lead to different terminal states
+* *Contained sub-workflows*: Localized stateful behavior within a larger workflow
+
+===== How Nested Workflows Work
+
+The key insight is simple: **returning a `Workflow<O>` class from an action enters that workflow as a nested agent.**
+
+1. When an action returns a `Workflow<O>` class instance, the process enters that workflow
+2. The type parameter `O` (via `outputType` property) declares what type the workflow ultimately produces
+3. Within each workflow, GOAP plans which action to execute based on preconditions and effects
+4. When an action has `@AchievesGoal`, the workflow completes and returns its result
+5. The workflow's result replaces the workflow object on the parent's blackboard
+
+===== Example: Write and Review Workflow
+
+This example shows a workflow with nested phases for reviewing and revising a story:
+
+[source,kotlin]
+----
+@Agent(description = "Write and review story with human feedback loop")
+class WriteAndReviewAgent {
+
+    // Common interface for all workflow phases
+    interface StoryFlow : Workflow<Story> {  // <1>
+        override val outputType: Class<Story>
+            get() = Story::class.java
+    }
+
+    @Action
+    fun writeStory(input: UserInput): Reviewing {  // <2>
+        val story = Story("A story about: ${input.content}")
+        return Reviewing(story)
+    }
+
+    class Reviewing(val story: Story) : StoryFlow {  // <3>
+
+        @Action
+        fun collectFeedback(): HumanFeedback {
+            // In real usage, this would use WaitFor.formSubmission(...)
+            return HumanFeedback(approved = false, comments = "Needs more detail")
+        }
+
+        @Action
+        fun assessFeedback(feedback: HumanFeedback): Assessment {
+            return Assessment(
+                story = story,
+                feedback = feedback,
+                accepted = feedback.approved,
+                suggestions = if (feedback.approved) emptyList() else listOf("Add more detail"),
+            )
+        }
+
+        @Action
+        fun decide(assessment: Assessment): StoryFlow {  // <4>
+            return if (assessment.accepted) {
+                Done(assessment.story, assessment.feedback)
+            } else {
+                Revising(assessment.story, assessment)
+            }
+        }
+    }
+
+    class Revising(val story: Story, val assessment: Assessment) : StoryFlow {
+
+        @Action
+        fun improveStory(): Reviewing {  // <5>
+            val improvedStory = Story("${story.text} [Improved based on: ${assessment.suggestions}]")
+            return Reviewing(improvedStory)
+        }
+    }
+
+    class Done(val story: Story, val feedback: HumanFeedback) : StoryFlow {
+
+        @Action
+        @AchievesGoal(description = "Story reviewed and accepted")  // <6>
+        fun publish(): ReviewedStory {
+            return ReviewedStory(story, feedback)
+        }
+    }
+}
+----
+
+<1> Common interface extends `Workflow<Story>` with the `outputType` property
+<2> Entry action returns a workflow class to enter the reviewing phase
+<3> Workflow classes hold state in constructor parameters
+<4> Actions can return other workflow classes to transition between phases
+<5> Returning `Reviewing` creates a loop back to the review phase
+<6> `@AchievesGoal` marks the terminal action that produces the workflow's result
+
+This enables complex workflow patterns:
+
+* **Draft → Review → (Revise → Review)* → Done**: Loop until approved
+* **Processing → (Success | Failure)**: Branch to different terminal outcomes
+* **Multi-step GOAP within workflows**: Multiple actions planned by GOAP before transitioning
+
+===== The Workflow Interface
+
+Workflow classes must implement the `Workflow<O>` interface:
+
+[source,kotlin]
+----
+interface Workflow<OUTPUT> {
+    val outputType: Class<OUTPUT>
+}
+----
+
+The `outputType` property tells GOAP what type this workflow produces.
+This is necessary because Java type erasure would otherwise hide the generic type at runtime.
+
+===== Workflow Class Options
+
+Workflows can be nested classes (static) or inner classes:
+
+[source,kotlin]
+----
+// Nested class (static) - no access to enclosing agent instance
+class ProcessingWorkflow(val data: String) : Workflow<Result> {  // <1>
+    override val outputType = Result::class.java
+
+    @Action
+    @AchievesGoal(description = "Process complete")
+    fun process(): Result = Result(data.uppercase())
+}
+
+// Inner class - has access to enclosing agent instance (can use injected services)
+inner class ProcessingWorkflow(val data: String) : Workflow<Result> {  // <2>
+    override val outputType = Result::class.java
+
+    @Action
+    @AchievesGoal(description = "Process complete")
+    fun process(): Result = Result(data.uppercase())
+}
+----
+
+<1> Nested (static) class - fully self-contained, no access to enclosing instance
+<2> Inner class - has access to enclosing agent instance and its injected dependencies
+
+===== Data Encapsulation in Workflows
+
+Workflows hold their state in constructor parameters.
+This captures context when entering the workflow:
+
+[source,kotlin]
+----
+class ReviewingWorkflow(
+    val story: Story,  // <1>
+    val reviewer: Reviewer,  // <2>
+) : Workflow<ReviewedStory> {
+    override val outputType = ReviewedStory::class.java
+
+    @Action
+    @AchievesGoal(description = "Review complete")
+    fun review(): ReviewedStory {
+        // Both story and reviewer are available here
+        return ReviewedStory(story, reviewer.review(story))
+    }
+}
+----
+
+<1> The story to be reviewed - captured when entering the workflow
+<2> Additional context passed to the workflow
+
+===== Interface Hierarchies
+
+Using a common interface for related workflow classes enables type-safe transitions:
+
+[source,kotlin]
+----
+interface StoryFlow : Workflow<Story> {
+    override val outputType: Class<Story>
+        get() = Story::class.java
+}
+
+class Reviewing(val story: Story) : StoryFlow { ... }
+class Revising(val story: Story) : StoryFlow { ... }
+class Done(val story: Story) : StoryFlow { ... }
+----
+
+Actions can return the interface type to allow any of the implementing workflow classes:
+
+[source,kotlin]
+----
+@Action
+fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
+    return if (assessment.accepted) Done(...) else Revising(...)
+}
+----

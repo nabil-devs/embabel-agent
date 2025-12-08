@@ -18,10 +18,12 @@ package com.embabel.agent.api.annotation.support
 import com.embabel.agent.api.annotation.AwaitableResponseException
 import com.embabel.agent.api.common.TransformationActionContext
 import com.embabel.agent.api.common.support.MultiTransformationAction
+import com.embabel.agent.api.common.workflow.Workflow
 import com.embabel.agent.core.Action
 import com.embabel.agent.core.IoBinding
 import com.embabel.agent.core.ToolGroupRequirement
 import org.slf4j.LoggerFactory
+import java.lang.reflect.ParameterizedType
 import org.springframework.ai.tool.ToolCallback
 import org.springframework.core.KotlinDetector
 import org.springframework.stereotype.Component
@@ -65,6 +67,9 @@ internal class DefaultActionMethodManager(
 
         require(method.returnType != null) { "Action method ${method.name} must have a return type" }
 
+        // Check if the return type is a Workflow - if so, the actual output is the Workflow's outputType
+        val outputClass = resolveOutputClass(method.returnType)
+
         return MultiTransformationAction(
             name = nameGenerator.generateName(instance, method.name),
             description = actionAnnotation.description.ifBlank { method.name },
@@ -74,7 +79,7 @@ internal class DefaultActionMethodManager(
             pre = actionAnnotation.pre.toList(),
             post = actionAnnotation.post.toList(),
             inputClasses = inputClasses,
-            outputClass = method.returnType,
+            outputClass = outputClass,
             outputVarName = actionAnnotation.outputBinding,
             toolGroups = (actionAnnotation.toolGroupRequirements.map { ToolGroupRequirement(it.role) } + actionAnnotation.toolGroups.map {
                 ToolGroupRequirement(
@@ -88,6 +93,38 @@ internal class DefaultActionMethodManager(
                 actionContext = context,
             )
         }
+    }
+
+    /**
+     * Resolve the effective output class for an action method.
+     * If the return type implements Workflow<O>, try to infer O from the generic type.
+     * Otherwise, return the method's return type directly.
+     */
+    private fun resolveOutputClass(returnType: Class<*>): Class<*> {
+        if (!Workflow::class.java.isAssignableFrom(returnType)) {
+            return returnType
+        }
+
+        // Find the Workflow interface in the class hierarchy and extract its type argument
+        for (genericInterface in returnType.genericInterfaces) {
+            if (genericInterface is ParameterizedType &&
+                Workflow::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
+            ) {
+                val typeArg = genericInterface.actualTypeArguments.firstOrNull()
+                if (typeArg is Class<*>) {
+                    logger.debug(
+                        "Action returns Workflow<{}>, using {} as output type",
+                        typeArg.simpleName,
+                        typeArg.simpleName
+                    )
+                    return typeArg
+                }
+            }
+        }
+
+        // If we couldn't extract the type argument, just use the workflow class
+        logger.debug("Could not extract output type from Workflow, using {} directly", returnType.simpleName)
+        return returnType
     }
 
     private fun resolveInputBindings(
