@@ -62,6 +62,16 @@ class WorkflowRunner(
         val workflowClass = workflow::class.java
         logger.debug("Attempting to run workflow as nested agent: {}", workflowClass.name)
 
+        // Warn if this is an inner class (non-static nested class) as it holds a reference
+        // to the enclosing instance, which can cause issues with workflow persistence
+        if (isInnerClass(workflowClass)) {
+            logger.warn(
+                "Workflow class '{}' is an inner class (non-static). This may cause issues with " +
+                    "workflow persistence. Consider making it a nested class (static) or a top-level class.",
+                workflowClass.name
+            )
+        }
+
         // Create agent metadata from the workflow instance
         val agentScope = agentMetadataReader.createAgentMetadata(workflow)
         if (agentScope == null) {
@@ -128,6 +138,18 @@ class WorkflowRunner(
         }
 
         return nestedResult ?: output
+    }
+
+    /**
+     * Check if a class is an inner class (non-static nested class).
+     * Inner classes hold a reference to their enclosing instance, which can
+     * cause serialization and persistence issues.
+     */
+    private fun isInnerClass(clazz: Class<*>): Boolean {
+        // A class is an inner class if it's a member class but not static
+        // In Java reflection, isMemberClass() returns true for both static nested and inner classes
+        // We need to check if it's NOT static (doesn't have Modifier.STATIC)
+        return clazz.isMemberClass && !java.lang.reflect.Modifier.isStatic(clazz.modifiers)
     }
 
     companion object {

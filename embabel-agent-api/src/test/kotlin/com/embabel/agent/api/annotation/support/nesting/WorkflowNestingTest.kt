@@ -61,6 +61,29 @@ class WorkflowNestingTest {
             val workflow = EmptyWorkflow()
             assertFalse(runner.isWorkflow(workflow))
         }
+
+        @Test
+        fun `nested static class is not detected as inner class`() {
+            // WriteAndReviewAgent's Reviewing is a nested (static) class
+            val reviewing = WriteAndReviewAgent.Reviewing(Story("test"))
+            assertFalse(
+                reviewing::class.java.isMemberClass &&
+                    !java.lang.reflect.Modifier.isStatic(reviewing::class.java.modifiers),
+                "Nested class should not be detected as inner class"
+            )
+        }
+
+        @Test
+        fun `inner class is detected correctly`() {
+            // AgentWithInnerWorkflow's InnerWorkflow is an inner class
+            val agent = AgentWithInnerWorkflow()
+            val innerWorkflow = agent.InnerWorkflow("test")
+            assertTrue(
+                innerWorkflow::class.java.isMemberClass &&
+                    !java.lang.reflect.Modifier.isStatic(innerWorkflow::class.java.modifiers),
+                "Inner class should be detected as inner class"
+            )
+        }
     }
 
     @Nested
@@ -188,4 +211,24 @@ class AgentWithChainedWorkflows {
     @Action
     @AchievesGoal(description = "Get finalized story")
     fun complete(story: TestStory): TestStory = story
+}
+
+// Agent with an inner class workflow (not recommended - for testing warning)
+@Agent(description = "Agent with inner class workflow")
+class AgentWithInnerWorkflow {
+
+    // Inner class (note the 'inner' keyword) - holds reference to enclosing instance
+    // This will trigger a warning at runtime
+    inner class InnerWorkflow(val data: String) : Workflow<TestStory> {
+        override val outputType = TestStory::class.java
+
+        @Action
+        @AchievesGoal(description = "Process with inner class")
+        fun process(): TestStory = TestStory("inner processed: $data")
+    }
+
+    @Action
+    fun enterWorkflow(input: UserInput): InnerWorkflow {
+        return InnerWorkflow(input.content)
+    }
 }

@@ -291,6 +291,11 @@ inner class ProcessingWorkflow(val data: String) : Workflow<Result> {  // <2>
 <1> Nested (static) class - fully self-contained, no access to enclosing instance
 <2> Inner class - has access to enclosing agent instance and its injected dependencies
 
+WARNING: **Inner classes and persistence**: Inner classes (declared with the `inner` keyword in Kotlin) hold a reference to their enclosing instance.
+This can cause issues with workflow persistence/serialization because the entire enclosing object graph must also be serialized.
+*Prefer nested (static) classes for workflows* unless you specifically need access to injected services from the enclosing agent.
+The runtime will log a warning when an inner class workflow is detected.
+
 ===== Data Encapsulation in Workflows
 
 Workflows hold their state in constructor parameters.
