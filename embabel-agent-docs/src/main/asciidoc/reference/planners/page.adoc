@@ -1,0 +1,321 @@
+[[reference.planners]]
+=== Choosing a Planner
+
+Embabel supports multiple planning strategies.
+All are deterministic, but their behaviour differs--although it is always predictable.
+
+All planning strategies are entirely typesafe in Java or Kotlin.
+
+The planning strategies currently supported out of the box are:
+
+[cols="1,2,3",options="header"]
+|===
+|Planner |Best For |Description
+
+|*GOAP* (default)
+|Business processes with defined outputs
+|Goal-oriented, deterministic planning. Plans a path from current state to goal using preconditions and effects.
+
+|*Utility*
+|Exploration and event-driven systems
+|Selects the highest-value available action at each step. Ideal when you don't know the outcome upfront.
+
+|*State Machine*
+|Workflows with loops and explicit phases
+|Combines state structure with GOAP. States hold data; GOAP plans within states; transitions via return types.
+|===
+
+TIP: State machines are good "in the small" for looping behaviors, which can be harder to express in pure GOAP.
+GOAP excels "in the large" for complex goal-oriented planning.
+
+As most of the documentation covers GOAP, this section discusses the alternative planners.
+
+[[reference.planners__utility]]
+==== Utility AI
+
+https://en.wikipedia.org/wiki/Utility_system[Utility AI] selects the action with the highest _net value_ from all available actions at each step.
+Unlike GOAP, which plans a path to a goal, Utility AI makes greedy decisions based on immediate value.
+
+Utility AI excels in *exploratory scenarios* where you don't know exactly what you want to achieve.
+Consider a GitHub issue triage system: when a new issue arrives, you don't have a predetermined goal.
+Instead, you want to react appropriately based on the issue's characteristics--maybe label it, maybe respond, maybe escalate.
+The "right" action depends on what you discover as you process it.
+
+This makes Utility AI ideal for scenarios where:
+
+* There is no clear end goal--you're exploring possibilities
+* Multiple actions could be valuable depending on context
+* You want to respond to changing conditions as they emerge
+* The best outcome isn't known upfront
+
+===== When to Use Utility AI
+
+* *Event-driven systems*: React to incoming events (issues, stars, webhooks) with the most appropriate action
+* *Chatbots*: Where the platform provides multiple response options and selects the best one
+* *Exploration*: When you want to discover what's possible rather than achieve a specific goal
+
+===== Using Utility AI with `@EmbabelComponent`
+
+For Utility AI, actions are typically provided via `@EmbabelComponent` rather than `@Agent`.
+This allows the _platform_ to select actions across multiple components based on utility, rather than constraining actions to a single agent.
+
+Here's an example from the Shepherd project that reacts to GitHub events:
+
+[source,kotlin]
+----
+@EmbabelComponent  // <1>
+class IssueActions(
+    val properties: ShepherdProperties,
+    private val communityDataManager: CommunityDataManager,
+    private val gitHubUpdater: GitHubUpdater,
+) {
+
+    @Action(outputBinding = "ghIssue")  // <2>
+    fun saveNewIssue(ghIssue: GHIssue, context: OperationContext): GHIssue? {
+        val existing = communityDataManager.findIssueByGithubId(ghIssue.id)
+        if (existing == null) {
+            val issueEntityStatus = communityDataManager.saveAndExpandIssue(ghIssue)
+            context += issueEntityStatus  // <3>
+            return ghIssue
+        }
+        return null  // <4>
+    }
+
+    @Action(
+        pre = ["spel:newEntity.newEntities.?[#this instanceof T(com.embabel.shepherd.domain.Issue)].size() > 0"]  // <5>
+    )
+    fun reactToNewIssue(
+        ghIssue: GHIssue,
+        newEntity: NewEntity<*>,
+        ai: Ai
+    ): IssueAssessment {
+        return ai
+            .withLlm(properties.triageLlm)
+            .creating(IssueAssessment::class.java)
+            .fromTemplate("first_issue_response", mapOf("issue" to ghIssue))  // <6>
+    }
+
+    @Action(pre = ["spel:issueAssessment.urgency > 0.0"])  // <7>
+    fun heavyHitterIssue(issue: GHIssue, issueAssessment: IssueAssessment) {
+        // Take action on high-urgency issues
+    }
+}
+----
+
+<1> `@EmbabelComponent` contributes actions to the platform, not a specific agent
+<2> `outputBinding` names the result for later actions to reference
+<3> Add entity status to context, making it available to subsequent actions
+<4> Returning `null` prevents further actions from firing for this issue
+<5> SpEL precondition: only fire if new issues were created
+<6> Use AI to assess the issue via a template
+<7> This action only fires if the assessment shows urgency > 0
+
+The platform selects which action to run based on:
+
+1. Which preconditions are satisfied (type availability + SpEL conditions)
+2. The `cost` and `value` parameters on `@Action` (net value = value - cost)
+
+===== Action Cost and Value
+
+The `@Action` annotation supports `cost` and `value` parameters (both 0.0 to 1.0):
+
+[source,kotlin]
+----
+@Action(
+    cost = 0.1,   // <1>
+    value = 0.8   // <2>
+)
+fun highValueAction(input: Input): Output {
+    // Action implementation
+}
+----
+
+<1> Cost to execute (0.0 to 1.0) - lower is cheaper
+<2> Value when executed (0.0 to 1.0) - higher is more valuable
+
+The Utility planner calculates _net value_ as `value - cost` and selects the action with the highest net value from all available actions.
+
+===== The Nirvana Goal
+
+Utility AI supports a special "Nirvana" goal that is never satisfied.
+This keeps the process running, continuously selecting the highest-value available action until no actions are available.
+
+===== Extensibility
+
+Utility AI fosters extensibility.
+For example, multiple groups within an organization can contribute their own `@EmbabelComponent` classes with actions that bring their own expertise to enhance behaviours around shared types, while retaining the ability to own and control their own extended model.
+
+[[reference.planners__state-machine]]
+==== State Machine Planner
+
+The State Machine planner (`PlannerType.STATE_MACHINE`) combines explicit state management with GOAP planning.
+States are defined as inner classes, and GOAP plans actions _within_ each state.
+Transitions between states occur when an action returns a different state type.
+
+Unlike LangGraph, Embabel state machines are typesafe and can enjoy the benefits of GOAP planning within each state.
+
+===== When to Use State Machine
+
+* *Workflows with loops*: Human-in-the-loop feedback cycles, retry logic
+* *Multi-phase processes*: Where each phase has distinct actions and data
+* *Complex branching*: Where different paths lead to different terminal states
+
+===== Defining States
+
+States are inner classes annotated with `@State`.
+Each state can contain:
+
+* Constructor parameters holding state-specific data
+* `@Action` methods that either process within the state or transition to another state
+
+[source,kotlin]
+----
+@Agent(
+    description = "Write and review story with human feedback loop",
+    planner = PlannerType.STATE_MACHINE,
+)
+class WriteAndReviewStateMachine : StateMachineWorkflow<UserInput, ReviewedStory> {
+
+    @State(initial = true)  // <1>
+    inner class Drafting {
+        @Action
+        fun writeStory(input: UserInput, ai: Ai): Reviewing {  // <2>
+            val story = ai
+                .withAutoLlm()
+                .createObject("Write a story about: ${input.content}", Story::class.java)
+            return Reviewing(story)
+        }
+    }
+
+    @State
+    inner class Reviewing(val story: Story) {  // <3>
+        @Action
+        fun collectFeedback(): HumanFeedback {
+            return WaitFor.formSubmission(
+                    // Real prompt would include story content
+                    "Please provide feedback on the story: ...",
+                    HumanFeedback::class.java)  // <4>
+        }
+
+        @Action
+        fun assessFeedback(feedback: HumanFeedback, ai: Ai): Assessment {
+            return ai
+                .withDefaultLlm()
+                .creating(Assessment::class.java)
+                .fromPrompt("Assess this feedback and determine whether it is acceptable: ${feedback.comments}")
+        }
+
+        @Action
+        fun decide(assessment: Assessment): WorkflowState {  // <5>
+            return if (assessment.accepted) {
+                Done(story, assessment.feedback)
+            } else {
+                Revising(story, assessment)
+            }
+        }
+    }
+
+    @State
+    inner class Revising(val story: Story, val assessment: Assessment) {
+        @Action
+        fun improveStory(ai: Ai): Reviewing {  // <6>
+            val improvedStory = ai
+                .creating(Story::class.java)
+                .create("Improve story based on: ${assessment.suggestions}: Previous iteration was ${story.content}")
+            return Reviewing(improvedStory)
+        }
+    }
+
+    @State  // <7>
+    inner class Done(val story: Story, val feedback: HumanFeedback) {
+        @Action
+        @AchievesGoal(description = "Story reviewed and accepted")  // <8>
+        fun finalize(): ReviewedStory {
+            return ReviewedStory(story, feedback)
+        }
+    }
+}
+----
+
+<1> Exactly one state must be marked as `initial = true`
+<2> Returning a different state type triggers a transition to that state
+<3> State classes can hold data in constructor parameters
+<4> `waitFor` works naturally within state machine actions
+<5> Returning a sealed interface allows type-safe branching
+<6> Returning `Reviewing` creates a loop back to the review phase
+<7> Terminal states have `@AchievesGoal` - no need for `terminal = true`
+<8> The `@AchievesGoal` annotation automatically makes this a terminal state
+
+===== How It Works
+
+1. The process starts in the `initial` state
+2. Within each state, GOAP plans which action to execute based on preconditions and effects
+3. When an action returns a _different state type_, the process transitions to that state
+4. When an action has `@AchievesGoal`, the process completes successfully
+
+This enables complex workflows like:
+
+* **Draft → Review → (Revise → Review)* → Done**: Loop until approved
+* **Processing → (Success | Failure)**: Branch to different terminal states
+* **Multi-step GOAP within states**: Multiple actions planned by GOAP before transitioning
+
+===== State Class Options
+
+States can be defined as inner classes or nested classes:
+
+[source,kotlin]
+----
+@State
+inner class Processing(val data: String) {  // <1>
+    @Action
+    fun process(): Done = Done(data.uppercase())
+}
+
+@State
+class Processing(val data: String) {  // <2>
+    @Action
+    fun process(): Done = Done(data.uppercase())
+}
+----
+
+<1> Inner class - has access to enclosing agent instance (can use injected services)
+<2> Nested class - no access to enclosing instance (self-contained actions)
+
+===== Sealed Interfaces for Type-Safe Branching
+
+Use sealed interfaces to ensure exhaustive handling of all possible transitions:
+
+[source,kotlin]
+----
+sealed interface WorkflowState  // <1>
+
+@State
+inner class Processing(val data: String) : WorkflowState {
+    @Action
+    fun decide(): WorkflowState {  // <2>
+        return if (data.length > 10) LongPath(data) else ShortPath(data)
+    }
+}
+
+@State
+inner class LongPath(val data: String) : WorkflowState {  // <3>
+    @Action
+    @AchievesGoal(description = "Long path complete")
+    fun finish(): String = "Long: $data"
+}
+
+@State
+inner class ShortPath(val data: String) : WorkflowState {  // <3>
+    @Action
+    @AchievesGoal(description = "Short path complete")
+    fun finish(): String = "Short: $data"
+}
+----
+
+<1> Sealed interface defines all possible states in the workflow
+<2> Return type is the sealed interface - compiler ensures all branches handled
+<3> Each state implements the sealed interface for type safety
+
+The compiler ensures all branches are handled, and the state machine reader validates that all referenced states exist.
+
+

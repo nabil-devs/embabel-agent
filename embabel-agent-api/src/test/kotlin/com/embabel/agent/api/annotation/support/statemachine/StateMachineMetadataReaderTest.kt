@@ -17,9 +17,7 @@ package com.embabel.agent.api.annotation.support.statemachine
 
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.annotation.support.StateMachineMetadataReader
-import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.core.Agent
-import com.embabel.plan.statemachine.StateMachinePlanningSystem
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -289,6 +287,76 @@ class StateMachineMetadataReaderTest {
             assertTrue(agent is Agent)
             // The agent should be created, and PlannerType should be STATE_MACHINE
             // (verified through annotation on the class)
+        }
+    }
+
+    @Nested
+    @DisplayName("Non-Inner State Classes")
+    inner class NonInnerStateClasses {
+
+        @Test
+        fun `detects nested (non-inner) state classes`() {
+            val machine = NestedClassStateMachine()
+            val states = reader.findStateClasses(machine.javaClass)
+
+            assertEquals(3, states.size, "Should find 3 nested state classes")
+            assertTrue(states.any { it.simpleName == "Start" })
+            assertTrue(states.any { it.simpleName == "Processing" })
+            assertTrue(states.any { it.simpleName == "Done" })
+        }
+
+        @Test
+        fun `reads metadata from nested state classes`() {
+            val machine = NestedClassStateMachine()
+            val planningSystem = reader.readStateMachineMetadata(machine)
+
+            assertNotNull(planningSystem)
+            assertEquals(3, planningSystem!!.states.size)
+            assertEquals("Start", planningSystem.initialState.name)
+            assertEquals(1, planningSystem.terminalStates.size)
+            assertEquals("Done", planningSystem.terminalStates.first().name)
+        }
+
+        @Test
+        fun `detects transitions in nested state classes`() {
+            val machine = NestedClassStateMachine()
+            val planningSystem = reader.readStateMachineMetadata(machine)
+
+            assertNotNull(planningSystem)
+
+            val startState = planningSystem!!.states.find { it.name == "Start" }
+            assertNotNull(startState)
+            assertEquals(1, startState!!.transitions.size)
+            assertEquals("Processing", startState.transitions.first().targetStateClass?.simpleName)
+
+            val processingState = planningSystem.states.find { it.name == "Processing" }
+            assertNotNull(processingState)
+            assertEquals(1, processingState!!.transitions.size)
+            assertEquals("Done", processingState.transitions.first().targetStateClass?.simpleName)
+        }
+
+        @Test
+        fun `finds actions in nested state classes`() {
+            val machine = NestedClassStateMachine()
+            val planningSystem = reader.readStateMachineMetadata(machine)
+
+            assertNotNull(planningSystem)
+
+            val startState = planningSystem!!.states.find { it.name == "Start" }
+            assertNotNull(startState)
+            assertEquals(1, startState!!.actions.size)
+            assertTrue(startState.actions.any { it.name.contains("begin") })
+        }
+
+        @Test
+        fun `AgentMetadataReader works with nested state classes`() {
+            val machine = NestedClassStateMachine()
+            val agent = agentReader.createAgentMetadata(machine)
+
+            assertNotNull(agent)
+            assertTrue(agent is Agent)
+            // Verify actions are extracted from nested state classes
+            assertTrue(agent!!.actions.isNotEmpty(), "Should have actions from nested state classes")
         }
     }
 }
