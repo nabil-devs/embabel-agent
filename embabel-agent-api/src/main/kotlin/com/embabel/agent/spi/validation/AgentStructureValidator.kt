@@ -18,6 +18,8 @@ package com.embabel.agent.spi.validation
 import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
 import com.embabel.agent.api.annotation.Condition
+import com.embabel.agent.api.annotation.State
+import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.core.AgentScope
 import com.embabel.common.util.loggerFor
 import org.springframework.beans.factory.InitializingBean
@@ -47,6 +49,29 @@ class AgentStructureValidator(
         val agentBeans = context.getBeansWithAnnotation(Agent::class.java)
         agentBeans.values.forEach { bean ->
             val clazz = getOriginalClass(bean.javaClass)
+
+            // Skip validation for state machine workflows - they have @Action methods in @State inner classes
+            val agentAnnotation = clazz.getAnnotation(Agent::class.java)
+            if (agentAnnotation?.planner == PlannerType.STATE_MACHINE) {
+                // State machines have actions in @State inner classes, not on the class itself
+                val hasStateClasses = clazz.declaredClasses.any { it.isAnnotationPresent(State::class.java) }
+                if (!hasStateClasses) {
+                    val error = ValidationError(
+                        code = "EMPTY_STATE_MACHINE",
+                        message = "State machine agent '${clazz.name}' has no @State inner classes defined.",
+                        severity = ValidationSeverity.ERROR,
+                        location = ValidationLocation(
+                            type = "Agent",
+                            name = clazz.name,
+                            agentName = clazz.name,
+                            component = clazz.name
+                        )
+                    )
+                    loggerFor<AgentStructureValidator>().warn(error.toString())
+                }
+                return@forEach
+            }
+
             val actionMethods = clazz.declaredMethods.filter { it.isAnnotationPresent(Action::class.java) }
             val conditionMethods = clazz.declaredMethods.filter { it.isAnnotationPresent(Condition::class.java) }
             val hasGoalsField = clazz.declaredFields.any { it.name == "goals" }

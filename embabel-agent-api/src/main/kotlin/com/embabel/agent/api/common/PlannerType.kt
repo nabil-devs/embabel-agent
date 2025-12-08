@@ -32,4 +32,14 @@ enum class PlannerType {
      * This planner uses utility functions to evaluate actions.
      */
     UTILITY,
+
+    /**
+     * State machine planner.
+     * Uses @State inner classes to define states in a workflow.
+     * GOAP plans within each state; transitions between states
+     * are determined by action return types.
+     * States are inner classes that hold state-specific data and @Action methods.
+     * Returning a different state type from an action triggers a transition.
+     */
+    STATE_MACHINE,
 }

@@ -27,7 +27,11 @@ import com.embabel.plan.goap.astar.AStarGoapPlanner
 import com.embabel.plan.utility.UtilityPlanner
 
 /**
- * PlannerFactory that knows about GOAP and Utility planners
+ * PlannerFactory that knows about GOAP, Utility, and StateMachine planners.
+ *
+ * For STATE_MACHINE planner type, this delegates to GOAP.
+ * State transitions are handled at the execution level based on action return types,
+ * while GOAP handles planning within each state.
  */
 object DefaultPlannerFactory : PlannerFactory {
 
@@ -39,6 +43,12 @@ object DefaultPlannerFactory : PlannerFactory {
         return when (processOptions.plannerType) {
             PlannerType.GOAP -> AStarGoapPlanner(worldStateDeterminer)
             PlannerType.UTILITY -> UtilityPlanner(worldStateDeterminer)
+            PlannerType.STATE_MACHINE -> {
+                // State machine uses GOAP for planning within states.
+                // State transitions are determined at execution time
+                // based on action return types (returning a @State class).
+                AStarGoapPlanner(worldStateDeterminer)
+            }
         }
     }
 }

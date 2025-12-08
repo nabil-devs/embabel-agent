@@ -150,3 +150,68 @@ annotation class Action(
 annotation class RequireNameMatch(
     val value: String = "",
 )
+
+/**
+ * Marks an inner class as a state in a state machine workflow.
+ * Used with [PlannerType.STATE_MACHINE] agents.
+ *
+ * State classes should:
+ * - Be inner classes of the agent class
+ * - Have constructor parameters for state data
+ * - Contain @Action methods that either:
+ *   - Return intermediate types (GOAP plans within state)
+ *   - Return another @State class instance (triggers transition)
+ *   - Return the workflow's output type (completes workflow)
+ *
+ * Example:
+ * ```kotlin
+ * @Agent(description = "Review workflow", planner = PlannerType.STATE_MACHINE)
+ * class ReviewAgent : StateMachineWorkflow<UserInput, ReviewedStory> {
+ *
+ *     @State(initial = true)
+ *     inner class Drafting {
+ *         @Action
+ *         fun draft(input: UserInput, ai: Ai): Reviewing {
+ *             val story = ai.createObject("Write story", Story::class.java)
+ *             return Reviewing(story)
+ *         }
+ *     }
+ *
+ *     @State
+ *     inner class Reviewing(val story: Story) {
+ *         @Action
+ *         fun review(ai: Ai): State {
+ *             // ... returns Done or Revising
+ *         }
+ *     }
+ *
+ *     @State // terminal inferred from @AchievesGoal
+ *     inner class Done(val story: Story) {
+ *         @Action
+ *         @AchievesGoal(description = "Story complete")
+ *         fun finalize(): ReviewedStory = ReviewedStory(story)
+ *     }
+ * }
+ * ```
+ *
+ * @param initial Whether this is the initial state. Exactly one state must be marked as initial.
+ * @param terminal Whether this is a terminal state. Can be omitted if the state has an action
+ *        with @[AchievesGoal], which automatically makes it terminal.
+ */
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+@MustBeDocumented
+annotation class State(
+    val initial: Boolean = false,
+    val terminal: Boolean = false,
+)
+
+/**
+ * Marker interface for state machine workflows.
+ * Classes implementing this interface should use [PlannerType.STATE_MACHINE]
+ * and define inner classes annotated with @[State].
+ *
+ * @param INPUT The input type that starts the workflow
+ * @param OUTPUT The output type produced when the workflow completes
+ */
+interface StateMachineWorkflow<INPUT, OUTPUT>

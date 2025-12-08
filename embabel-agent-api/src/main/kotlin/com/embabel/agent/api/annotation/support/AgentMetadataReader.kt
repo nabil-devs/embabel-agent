@@ -167,6 +167,15 @@ class AgentMetadataReader(
             )
             return null
         }
+        val plannerType = agenticInfo.agentAnnotation?.planner ?: PlannerType.GOAP
+
+        // For STATE_MACHINE planner type, use StateMachineMetadataReader to find actions in @State classes
+        val stateMachineReader = if (plannerType == PlannerType.STATE_MACHINE) {
+            StateMachineMetadataReader(nameGenerator)
+        } else null
+
+        val stateMachinePlanningSystem = stateMachineReader?.readStateMachineMetadata(instance)
+
         val getterGoals = findGoalGetters(targetType).map { getGoal(it, instance) }
         val actionMethods = findActionMethods(targetType)
         val conditionMethods = findConditionMethods(targetType)
@@ -174,12 +183,17 @@ class AgentMetadataReader(
         val toolCallbacksOnInstance = safelyGetToolCallbacksFrom(ToolObject.from(instance))
 
         val conditions = conditionMethods.map { createCondition(it, instance) }.toSet()
-        val (actions, actionGoals) = actionMethods.map { actionMethod ->
-            val action = actionMethodManager.createAction(actionMethod, instance, toolCallbacksOnInstance)
-            Pair(action, createGoalFromActionMethod(actionMethod, action, instance))
-        }.unzip()
 
-        val plannerType = agenticInfo.agentAnnotation?.planner ?: PlannerType.GOAP
+        // For state machines, get actions from the planning system; otherwise from methods
+        val (actions, actionGoals) = if (stateMachinePlanningSystem != null) {
+            // State machine actions come from @State classes
+            Pair(stateMachinePlanningSystem.actions.toList(), emptyList<AgentCoreGoal?>())
+        } else {
+            actionMethods.map { actionMethod ->
+                val action = actionMethodManager.createAction(actionMethod, instance, toolCallbacksOnInstance)
+                Pair(action, createGoalFromActionMethod(actionMethod, action, instance))
+            }.unzip()
+        }
 
         val goals = buildSet {
             addAll(getterGoals)
@@ -190,7 +204,9 @@ class AgentMetadataReader(
             }
         }
 
-        if (actionMethods.isEmpty() && goals.isEmpty() && conditionMethods.isEmpty()) {
+        // For state machines, we expect actions in @State classes, not on the agent class itself
+        val hasStateMachineContent = stateMachinePlanningSystem != null
+        if (!hasStateMachineContent && actionMethods.isEmpty() && goals.isEmpty() && conditionMethods.isEmpty()) {
             logger.warn(
                 "❓No methods annotated with @{} or @{} and no goals defined on {}",
                 Action::class.simpleName,
