@@ -16,7 +16,7 @@
 package com.embabel.agent.api.annotation.support.nesting
 
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
-import com.embabel.agent.api.common.workflow.Workflow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.workflow.WorkflowRunner
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessOptions
@@ -25,7 +25,6 @@ import com.embabel.agent.test.integration.IntegrationTestUtils
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import com.embabel.agent.core.Agent as CoreAgent
 
 /**
  * Comprehensive tests for WriteAndReviewAgent and its nested workflow pattern.
@@ -76,19 +75,19 @@ class WriteAndReviewAgentTest {
     }
 
     @Nested
-    inner class WorkflowInterfaceDetection {
+    inner class FlowReturningInterfaceDetection {
 
         @Test
         fun `StoryFlow interface extends Workflow with Story output type`() {
             // Verify the interface hierarchy
-            assertTrue(Workflow::class.java.isAssignableFrom(WriteAndReviewAgent.StoryFlow::class.java))
+            assertTrue(FlowReturning::class.java.isAssignableFrom(WriteAndReviewAgent.StoryFlow::class.java))
         }
 
         @Test
         fun `Reviewing implements StoryFlow`() {
             val reviewing = WriteAndReviewAgent.Reviewing(Story("test"))
             assertTrue(reviewing is WriteAndReviewAgent.StoryFlow)
-            assertTrue(reviewing is Workflow<*>)
+            assertTrue(reviewing is FlowReturning<*>)
             assertEquals(Story::class.java, reviewing.outputType)
         }
 
@@ -113,12 +112,12 @@ class WriteAndReviewAgentTest {
     }
 
     @Nested
-    inner class WorkflowRunnerDetection {
+    inner class FlowReturningRunnerDetection {
 
         @Test
         fun `Reviewing is detected as runnable workflow`() {
             val reviewing = WriteAndReviewAgent.Reviewing(Story("test"))
-            assertTrue(runner.isWorkflow(reviewing))
+            assertTrue(runner.isFlowReturning(reviewing))
         }
 
         @Test
@@ -127,7 +126,7 @@ class WriteAndReviewAgentTest {
             val feedback = HumanFeedback(approved = false, comments = "fix it")
             val assessment = Assessment(story, feedback, false, listOf("improve"))
             val revising = WriteAndReviewAgent.Revising(story, assessment)
-            assertTrue(runner.isWorkflow(revising))
+            assertTrue(runner.isFlowReturning(revising))
         }
 
         @Test
@@ -135,17 +134,17 @@ class WriteAndReviewAgentTest {
             val story = Story("final")
             val feedback = HumanFeedback(approved = true, comments = "good")
             val done = WriteAndReviewAgent.Done(story, feedback)
-            assertTrue(runner.isWorkflow(done))
+            assertTrue(runner.isFlowReturning(done))
         }
 
         @Test
         fun `plain Story is not a workflow`() {
-            assertFalse(runner.isWorkflow(Story("test")))
+            assertFalse(runner.isFlowReturning(Story("test")))
         }
 
         @Test
         fun `HumanFeedback is not a workflow`() {
-            assertFalse(runner.isWorkflow(HumanFeedback(true, "test")))
+            assertFalse(runner.isFlowReturning(HumanFeedback(true, "test")))
         }
     }
 
@@ -222,7 +221,7 @@ class WriteAndReviewAgentTest {
     }
 
     @Nested
-    inner class IndividualWorkflowExecution {
+    inner class IndividualFlowReturningExecution {
 
         @Test
         fun `Done workflow executes and produces ReviewedStory`() {
@@ -342,7 +341,7 @@ class WriteAndReviewAgentTest {
     }
 
     @Nested
-    inner class WorkflowStateTransitions {
+    inner class FlowReturningStateTransitions {
 
         @Test
         fun `happy path - story approved immediately`() {

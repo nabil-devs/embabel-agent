@@ -17,6 +17,8 @@ package com.embabel.agent.api.common.workflow
 
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
+import com.embabel.agent.api.common.subflow.Flow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessContext
 import org.slf4j.LoggerFactory
@@ -28,8 +30,8 @@ import org.slf4j.LoggerFactory
  * implementing Workflow or ActionClass to enter a nested flow. The nested flow runs to
  * completion, and its result becomes available on the blackboard.
  *
- * For GOAP planning, classes must implement [Workflow] to specify their output type.
- * For Utility AI planning, classes can implement either [Workflow] or [ActionClass]
+ * For GOAP planning, classes must implement [com.embabel.agent.api.common.subflow.FlowReturning] to specify their output type.
+ * For Utility AI planning, classes can implement either [com.embabel.agent.api.common.subflow.FlowReturning] or [com.embabel.agent.api.common.subflow.Flow]
  * since no goal-oriented planning is needed.
  */
 class WorkflowRunner(
@@ -42,8 +44,8 @@ class WorkflowRunner(
      * Check if the given object is a Workflow that can be run as a nested agent.
      * This requires the object to implement Workflow and have @Action methods.
      */
-    fun isWorkflow(obj: Any): Boolean {
-        if (obj !is Workflow<*>) {
+    fun isFlowReturning(obj: Any): Boolean {
+        if (obj !is FlowReturning<*>) {
             return false
         }
         // Verify it has @Action methods that can be executed
@@ -55,8 +57,8 @@ class WorkflowRunner(
      * Check if the given object is an ActionClass that can be run as a nested agent.
      * This requires the object to implement ActionClass and have @Action methods.
      */
-    fun isActionClass(obj: Any): Boolean {
-        if (obj !is ActionClass) {
+    fun isFlow(obj: Any): Boolean {
+        if (obj !is Flow) {
             return false
         }
         // Verify it has @Action methods that can be executed
@@ -69,8 +71,11 @@ class WorkflowRunner(
      * - For Workflow: always runnable (provides output type for GOAP)
      * - For ActionClass: only runnable with Utility AI (no output type needed)
      */
-    fun isRunnableNestedAgent(obj: Any, plannerType: PlannerType): Boolean {
-        return isWorkflow(obj) || (plannerType == PlannerType.UTILITY && isActionClass(obj))
+    fun isRunnableNestedAgent(
+        obj: Any,
+        plannerType: PlannerType,
+    ): Boolean {
+        return isFlowReturning(obj) || (plannerType == PlannerType.UTILITY && isFlow(obj))
     }
 
     /**
@@ -78,15 +83,15 @@ class WorkflowRunner(
      * Returns the result of the nested agent execution, or null if the workflow
      * could not be run as an agent.
      *
-     * @param workflow The workflow instance
+     * @param flowReturning The workflow instance
      * @param processContext The parent process context
      * @return The result of the nested agent, or null
      */
     fun runWorkflow(
-        workflow: Workflow<*>,
+        flowReturning: FlowReturning<*>,
         processContext: ProcessContext,
     ): Any? {
-        return runNestedAgent(workflow, processContext, "workflow")
+        return runNestedAgent(flowReturning, processContext, "workflow")
     }
 
     /**
@@ -95,15 +100,15 @@ class WorkflowRunner(
      * Returns the result of the nested agent execution, or null if the action class
      * could not be run as an agent.
      *
-     * @param actionClass The action class instance
+     * @param flow The action class instance
      * @param processContext The parent process context
      * @return The result of the nested agent, or null
      */
     fun runActionClass(
-        actionClass: ActionClass,
+        flow: Flow,
         processContext: ProcessContext,
     ): Any? {
-        return runNestedAgent(actionClass, processContext, "action class")
+        return runNestedAgent(flow, processContext, "action class")
     }
 
     /**
@@ -122,7 +127,7 @@ class WorkflowRunner(
         if (isInnerClass(instanceClass)) {
             logger.warn(
                 "{} class '{}' is an inner class (non-static). This may cause issues with " +
-                    "workflow persistence. Consider making it a nested class (static) or a top-level class.",
+                        "workflow persistence. Consider making it a nested class (static) or a top-level class.",
                 typeLabel.replaceFirstChar { it.uppercase() },
                 instanceClass.name
             )
@@ -185,7 +190,7 @@ class WorkflowRunner(
         val plannerType = processContext.processOptions.plannerType
 
         // Handle Workflow (always processable)
-        if (output is Workflow<*> && isWorkflow(output)) {
+        if (output is FlowReturning<*> && isFlowReturning(output)) {
             logger.debug("Output is a workflow, running as nested agent: {}", output::class.java.name)
             val nestedResult = runWorkflow(output, processContext)
 
@@ -198,7 +203,7 @@ class WorkflowRunner(
         }
 
         // Handle ActionClass (only with Utility AI)
-        if (output is ActionClass && plannerType == PlannerType.UTILITY && isActionClass(output)) {
+        if (output is Flow && plannerType == PlannerType.UTILITY && isFlow(output)) {
             logger.debug("Output is an ActionClass (Utility AI), running as nested agent: {}", output::class.java.name)
             val nestedResult = runActionClass(output, processContext)
 

@@ -23,8 +23,8 @@ import com.embabel.agent.api.common.OperationContext
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
-import com.embabel.agent.api.common.workflow.ActionClass
-import com.embabel.agent.api.common.workflow.Workflow
+import com.embabel.agent.api.common.subflow.Flow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
 import com.embabel.agent.core.support.NIRVANA
@@ -34,7 +34,6 @@ import com.embabel.agent.spi.validation.AgentStructureValidator
 import com.embabel.agent.spi.validation.AgentValidationManager
 import com.embabel.agent.spi.validation.DefaultAgentValidationManager
 import com.embabel.agent.spi.validation.GoapPathToCompletionValidator
-import java.lang.reflect.ParameterizedType
 import com.embabel.common.core.types.Semver
 import com.embabel.common.util.NameUtils
 import com.embabel.common.util.loggerFor
@@ -47,6 +46,7 @@ import org.springframework.stereotype.Service
 import org.springframework.util.ClassUtils
 import org.springframework.util.ReflectionUtils
 import java.lang.reflect.Method
+import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Proxy
 import com.embabel.agent.core.Action as CoreAction
 import com.embabel.agent.core.Agent as CoreAgent
@@ -75,14 +75,14 @@ internal data class AgenticInfo(
     /**
      * Does this type implement Workflow interface?
      */
-    val isWorkflow: Boolean = Workflow::class.java.isAssignableFrom(targetType)
+    val isFlowReturning: Boolean = FlowReturning::class.java.isAssignableFrom(targetType)
 
     /**
      * Does this type implement ActionClass interface?
      * ActionClass is a simpler marker for classes with @Action methods that don't need
      * a specified output type (used with Utility AI planner).
      */
-    val isActionClass: Boolean = ActionClass::class.java.isAssignableFrom(targetType)
+    val isFlow: Boolean = Flow::class.java.isAssignableFrom(targetType)
 
     fun isAgent(): Boolean = agentAnnotation != null
 
@@ -90,7 +90,7 @@ internal data class AgenticInfo(
      * Is this type agentic at all?
      * True if it has @EmbabelComponent, @Agent, implements Workflow interface, or implements ActionClass interface.
      */
-    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isWorkflow || isActionClass
+    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isFlowReturning || isFlow
 
     fun validationErrors(): Collection<String> {
         val errors = mutableListOf<String>()
@@ -205,7 +205,7 @@ class AgentMetadataReader(
                 add(NIRVANA)
             }
             // For Workflow implementations, add a goal based on the outputType
-            if (agenticInfo.isWorkflow && instance is Workflow<*>) {
+            if (agenticInfo.isFlowReturning && instance is FlowReturning<*>) {
                 val workflowOutputType = instance.outputType
                 add(
                     AgentCoreGoal(
@@ -217,7 +217,7 @@ class AgentMetadataReader(
             }
             // For ActionClass implementations (without @Agent annotation), add NIRVANA goal
             // since ActionClass is meant to be used with Utility AI which needs NIRVANA
-            if (agenticInfo.isActionClass && !agenticInfo.isWorkflow && agenticInfo.agentAnnotation == null) {
+            if (agenticInfo.isFlow && !agenticInfo.isFlowReturning && agenticInfo.agentAnnotation == null) {
                 add(NIRVANA)
             }
         }
@@ -509,14 +509,14 @@ class AgentMetadataReader(
      * Otherwise, return the method's return type directly.
      */
     private fun resolveEffectiveOutputType(returnType: Class<*>): Class<*> {
-        if (!Workflow::class.java.isAssignableFrom(returnType)) {
+        if (!FlowReturning::class.java.isAssignableFrom(returnType)) {
             return returnType
         }
 
         // Find the Workflow interface in the class hierarchy and extract its type argument
         for (genericInterface in returnType.genericInterfaces) {
             if (genericInterface is ParameterizedType &&
-                Workflow::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
+                FlowReturning::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
             ) {
                 val typeArg = genericInterface.actualTypeArguments.firstOrNull()
                 if (typeArg is Class<*>) {

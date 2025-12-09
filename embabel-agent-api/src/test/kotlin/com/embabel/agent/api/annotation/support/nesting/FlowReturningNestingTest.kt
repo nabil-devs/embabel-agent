@@ -19,7 +19,7 @@ import com.embabel.agent.api.annotation.AchievesGoal
 import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
-import com.embabel.agent.api.common.workflow.Workflow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.workflow.WorkflowRunner
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessOptions
@@ -37,29 +37,29 @@ data class TestStory(val content: String)
  * Tests for nested workflow pattern where actions can return Workflow<O> instances
  * to enter nested GOAP flows.
  */
-class WorkflowNestingTest {
+class FlowReturningNestingTest {
 
     @Nested
-    inner class WorkflowDetection {
+    inner class FlowReturningDetection {
 
         @Test
         fun `plain data class is not a workflow`() {
             val runner = WorkflowRunner()
-            assertFalse(runner.isWorkflow(TestStory("test")))
+            assertFalse(runner.isFlowReturning(TestStory("test")))
         }
 
         @Test
         fun `class implementing Workflow with @Action methods is detected`() {
             val runner = WorkflowRunner()
-            val workflow = SimpleWorkflow("data")
-            assertTrue(runner.isWorkflow(workflow))
+            val workflow = SimpleFlowReturning("data")
+            assertTrue(runner.isFlowReturning(workflow))
         }
 
         @Test
         fun `Workflow without @Action methods is not runnable`() {
             val runner = WorkflowRunner()
-            val workflow = EmptyWorkflow()
-            assertFalse(runner.isWorkflow(workflow))
+            val workflow = EmptyFlowReturning()
+            assertFalse(runner.isFlowReturning(workflow))
         }
 
         @Test
@@ -68,7 +68,7 @@ class WorkflowNestingTest {
             val reviewing = WriteAndReviewAgent.Reviewing(Story("test"))
             assertFalse(
                 reviewing::class.java.isMemberClass &&
-                    !java.lang.reflect.Modifier.isStatic(reviewing::class.java.modifiers),
+                        !java.lang.reflect.Modifier.isStatic(reviewing::class.java.modifiers),
                 "Nested class should not be detected as inner class"
             )
         }
@@ -77,10 +77,10 @@ class WorkflowNestingTest {
         fun `inner class is detected correctly`() {
             // AgentWithInnerWorkflow's InnerWorkflow is an inner class
             val agent = AgentWithInnerWorkflow()
-            val innerWorkflow = agent.InnerWorkflow("test")
+            val innerWorkflow = agent.InnerFlowReturning("test")
             assertTrue(
                 innerWorkflow::class.java.isMemberClass &&
-                    !java.lang.reflect.Modifier.isStatic(innerWorkflow::class.java.modifiers),
+                        !java.lang.reflect.Modifier.isStatic(innerWorkflow::class.java.modifiers),
                 "Inner class should be detected as inner class"
             )
         }
@@ -92,7 +92,7 @@ class WorkflowNestingTest {
         @Test
         fun `can create agent metadata from workflow class`() {
             val reader = AgentMetadataReader()
-            val metadata = reader.createAgentMetadata(SimpleWorkflow("test"))
+            val metadata = reader.createAgentMetadata(SimpleFlowReturning("test"))
             assertNotNull(metadata)
             assertEquals(1, metadata!!.actions.size)
             // Should have a goal based on the Workflow's outputType
@@ -102,7 +102,7 @@ class WorkflowNestingTest {
         @Test
         fun `workflow goal uses correct output type`() {
             val reader = AgentMetadataReader()
-            val metadata = reader.createAgentMetadata(SimpleWorkflow("test"))
+            val metadata = reader.createAgentMetadata(SimpleFlowReturning("test"))
             assertNotNull(metadata)
             val workflowGoal = metadata!!.goals.find { it.name.contains("workflow_output") }
             assertNotNull(workflowGoal)
@@ -155,12 +155,12 @@ class WorkflowNestingTest {
 }
 
 // Empty workflow - no @Action methods, should not be runnable
-class EmptyWorkflow : Workflow<TestStory> {
+class EmptyFlowReturning : FlowReturning<TestStory> {
     override val outputType = TestStory::class.java
 }
 
 // Simple workflow with one action
-class SimpleWorkflow(val data: String) : Workflow<TestStory> {
+class SimpleFlowReturning(val data: String) : FlowReturning<TestStory> {
     override val outputType = TestStory::class.java
 
     @Action
@@ -169,7 +169,7 @@ class SimpleWorkflow(val data: String) : Workflow<TestStory> {
 }
 
 // Workflow for the second phase
-class FinalizingWorkflow(val story: TestStory) : Workflow<TestStory> {
+class FinalizingFlowReturning(val story: TestStory) : FlowReturning<TestStory> {
     override val outputType = TestStory::class.java
 
     @Action
@@ -183,8 +183,8 @@ class SimpleAgentWithWorkflow {
 
     @Action
     @AchievesGoal(description = "Get a processed story")
-    fun enterWorkflow(input: UserInput): SimpleWorkflow {
-        return SimpleWorkflow(input.content)
+    fun enterWorkflow(input: UserInput): SimpleFlowReturning {
+        return SimpleFlowReturning(input.content)
     }
 }
 
@@ -193,17 +193,17 @@ class SimpleAgentWithWorkflow {
 class AgentWithChainedWorkflows {
 
     @Action
-    fun startProcessing(input: UserInput): ProcessingWorkflow {
-        return ProcessingWorkflow(input.content)
+    fun startProcessing(input: UserInput): ProcessingFlowReturning {
+        return ProcessingFlowReturning(input.content)
     }
 
-    class ProcessingWorkflow(val content: String) : Workflow<TestStory> {
+    class ProcessingFlowReturning(val content: String) : FlowReturning<TestStory> {
         override val outputType = TestStory::class.java
 
         @Action
-        fun process(): FinalizingWorkflow {
+        fun process(): FinalizingFlowReturning {
             val story = TestStory("processing: $content")
-            return FinalizingWorkflow(story)
+            return FinalizingFlowReturning(story)
         }
     }
 
@@ -219,7 +219,7 @@ class AgentWithInnerWorkflow {
 
     // Inner class (note the 'inner' keyword) - holds reference to enclosing instance
     // This will trigger a warning at runtime
-    inner class InnerWorkflow(val data: String) : Workflow<TestStory> {
+    inner class InnerFlowReturning(val data: String) : FlowReturning<TestStory> {
         override val outputType = TestStory::class.java
 
         @Action
@@ -228,7 +228,7 @@ class AgentWithInnerWorkflow {
     }
 
     @Action
-    fun enterWorkflow(input: UserInput): InnerWorkflow {
-        return InnerWorkflow(input.content)
+    fun enterWorkflow(input: UserInput): InnerFlowReturning {
+        return InnerFlowReturning(input.content)
     }
 }

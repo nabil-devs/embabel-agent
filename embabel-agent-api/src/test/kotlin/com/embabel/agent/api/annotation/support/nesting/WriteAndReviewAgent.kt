@@ -18,7 +18,7 @@ package com.embabel.agent.api.annotation.support.nesting
 import com.embabel.agent.api.annotation.AchievesGoal
 import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
-import com.embabel.agent.api.common.workflow.Workflow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.domain.io.UserInput
 
 data class Story(val text: String)
@@ -49,7 +49,7 @@ data class ReviewedStory(
 )
 class WriteAndReviewAgent {
 
-    interface StoryFlow : Workflow<Story> {
+    interface StoryFlow : FlowReturning<Story> {
         override val outputType: Class<Story>
             get() = Story::class.java
     }

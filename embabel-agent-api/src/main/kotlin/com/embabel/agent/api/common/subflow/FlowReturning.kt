@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.embabel.agent.api.common.workflow
+package com.embabel.agent.api.common.subflow
 
 /**
  * Workflow interface that has a known output
  */
-interface Workflow<OUTPUT> {
+interface FlowReturning<OUTPUT> {
 
     val outputType: Class<OUTPUT>
 }

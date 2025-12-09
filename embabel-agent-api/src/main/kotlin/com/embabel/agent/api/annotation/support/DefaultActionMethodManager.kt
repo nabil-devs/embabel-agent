@@ -17,19 +17,19 @@ package com.embabel.agent.api.annotation.support
 
 import com.embabel.agent.api.annotation.AwaitableResponseException
 import com.embabel.agent.api.common.TransformationActionContext
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.support.MultiTransformationAction
-import com.embabel.agent.api.common.workflow.Workflow
 import com.embabel.agent.core.Action
 import com.embabel.agent.core.IoBinding
 import com.embabel.agent.core.ToolGroupRequirement
 import org.slf4j.LoggerFactory
-import java.lang.reflect.ParameterizedType
 import org.springframework.ai.tool.ToolCallback
 import org.springframework.core.KotlinDetector
 import org.springframework.stereotype.Component
 import org.springframework.util.ReflectionUtils
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import java.lang.reflect.ParameterizedType
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.full.valueParameters
@@ -101,14 +101,14 @@ internal class DefaultActionMethodManager(
      * Otherwise, return the method's return type directly.
      */
     private fun resolveOutputClass(returnType: Class<*>): Class<*> {
-        if (!Workflow::class.java.isAssignableFrom(returnType)) {
+        if (!FlowReturning::class.java.isAssignableFrom(returnType)) {
             return returnType
         }
 
         // Find the Workflow interface in the class hierarchy and extract its type argument
         for (genericInterface in returnType.genericInterfaces) {
             if (genericInterface is ParameterizedType &&
-                Workflow::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
+                FlowReturning::class.java.isAssignableFrom(genericInterface.rawType as Class<*>)
             ) {
                 val typeArg = genericInterface.actualTypeArguments.firstOrNull()
                 if (typeArg is Class<*>) {

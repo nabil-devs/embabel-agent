@@ -20,8 +20,8 @@ import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
-import com.embabel.agent.api.common.workflow.ActionClass
-import com.embabel.agent.api.common.workflow.Workflow
+import com.embabel.agent.api.common.subflow.Flow
+import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.workflow.WorkflowRunner
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessOptions
@@ -42,50 +42,54 @@ data class ProcessedData(val content: String)
  * Unlike Workflow<O>, ActionClass doesn't require specifying an output type,
  * which is suitable for Utility AI where goal-oriented planning isn't needed.
  */
-class ActionClassNestingTest {
+class FlowNestingTest {
 
     private val runner = WorkflowRunner()
     private val reader = AgentMetadataReader()
 
     @Nested
-    inner class ActionClassDetection {
+    inner class FlowDetection {
 
         @Test
         fun `plain data class is not an ActionClass`() {
-            assertFalse(runner.isActionClass(ProcessedData("test")))
+            assertFalse(runner.isFlow(ProcessedData("test")))
         }
 
         @Test
         fun `class implementing ActionClass with @Action methods is detected`() {
-            val actionClass = SimpleActionClass("data")
-            assertTrue(runner.isActionClass(actionClass))
+            val actionClass = SimpleFlow("data")
+            assertTrue(runner.isFlow(actionClass))
         }
 
         @Test
         fun `ActionClass without @Action methods is not runnable`() {
-            val actionClass = EmptyActionClass()
-            assertFalse(runner.isActionClass(actionClass))
+            val actionClass = EmptyFlow()
+            assertFalse(runner.isFlow(actionClass))
         }
 
         @Test
         fun `Workflow is not detected as ActionClass`() {
-            val workflow = SimpleWorkflow("test")
-            assertFalse(runner.isActionClass(workflow))
+            val workflow = SimpleFlowReturning("test")
+            assertFalse(runner.isFlow(workflow))
         }
 
         @Test
         fun `ActionClass is not detected as Workflow`() {
-            val actionClass = SimpleActionClass("test")
-            assertFalse(runner.isWorkflow(actionClass))
+            val actionClass = SimpleFlow("test")
+            assertFalse(runner.isFlowReturning(actionClass))
         }
 
         @Test
         fun `nested ActionClass inside agent is detected`() {
-            val processingActionClass = UtilityAgentWithNestedTransitions.ProcessingActionClass("test")
-            assertTrue(runner.isActionClass(processingActionClass),
-                "ProcessingActionClass should be detected as ActionClass")
-            assertTrue(runner.isRunnableNestedAgent(processingActionClass, PlannerType.UTILITY),
-                "ProcessingActionClass should be runnable with UTILITY planner")
+            val processingActionClass = UtilityAgentWithNestedTransitions.ProcessingFlow("test")
+            assertTrue(
+                runner.isFlow(processingActionClass),
+                "ProcessingActionClass should be detected as ActionClass"
+            )
+            assertTrue(
+                runner.isRunnableNestedAgent(processingActionClass, PlannerType.UTILITY),
+                "ProcessingActionClass should be runnable with UTILITY planner"
+            )
         }
     }
 
@@ -94,25 +98,25 @@ class ActionClassNestingTest {
 
         @Test
         fun `Workflow is runnable with GOAP planner`() {
-            val workflow = SimpleWorkflow("test")
+            val workflow = SimpleFlowReturning("test")
             assertTrue(runner.isRunnableNestedAgent(workflow, PlannerType.GOAP))
         }
 
         @Test
         fun `Workflow is runnable with UTILITY planner`() {
-            val workflow = SimpleWorkflow("test")
+            val workflow = SimpleFlowReturning("test")
             assertTrue(runner.isRunnableNestedAgent(workflow, PlannerType.UTILITY))
         }
 
         @Test
         fun `ActionClass is NOT runnable with GOAP planner`() {
-            val actionClass = SimpleActionClass("test")
+            val actionClass = SimpleFlow("test")
             assertFalse(runner.isRunnableNestedAgent(actionClass, PlannerType.GOAP))
         }
 
         @Test
         fun `ActionClass IS runnable with UTILITY planner`() {
-            val actionClass = SimpleActionClass("test")
+            val actionClass = SimpleFlow("test")
             assertTrue(runner.isRunnableNestedAgent(actionClass, PlannerType.UTILITY))
         }
 
@@ -129,7 +133,7 @@ class ActionClassNestingTest {
 
         @Test
         fun `can create agent metadata from ActionClass`() {
-            val actionClass = SimpleActionClass("test")
+            val actionClass = SimpleFlow("test")
             val metadata = reader.createAgentMetadata(actionClass)
             assertNotNull(metadata)
             assertEquals(1, metadata!!.actions.size)
@@ -139,7 +143,7 @@ class ActionClassNestingTest {
         fun `ActionClass should have NIRVANA goal automatically`() {
             // ActionClass implementations without @Agent get NIRVANA goal automatically
             // since they're meant for Utility AI
-            val actionClass = SimpleActionClass("test")
+            val actionClass = SimpleFlow("test")
             val metadata = reader.createAgentMetadata(actionClass)
             assertNotNull(metadata)
             // ActionClass won't have workflow_output goal since it doesn't define an output type
@@ -147,8 +151,10 @@ class ActionClassNestingTest {
             // But it SHOULD have NIRVANA goal
             assertTrue(metadata.goals.any { it.name == "Nirvana" }, "ActionClass should have NIRVANA goal")
             // And it should also have the @AchievesGoal goal
-            assertTrue(metadata.goals.any { it.name.contains("process") },
-                "ActionClass should have @AchievesGoal-created goal: ${metadata.goals.map { it.name }}")
+            assertTrue(
+                metadata.goals.any { it.name.contains("process") },
+                "ActionClass should have @AchievesGoal-created goal: ${metadata.goals.map { it.name }}"
+            )
         }
 
         @Test
@@ -164,7 +170,7 @@ class ActionClassNestingTest {
         @Test
         fun `SimpleActionClass runs directly with Utility planner`() {
             // First test that SimpleActionClass can run as a standalone agent
-            val actionClass = SimpleActionClass("test input")
+            val actionClass = SimpleFlow("test input")
             val metadata = reader.createAgentMetadata(actionClass)
             assertNotNull(metadata)
 
@@ -179,8 +185,10 @@ class ActionClassNestingTest {
                 emptyMap()
             )
 
-            assertEquals(AgentProcessStatusCode.COMPLETED, agentProcess.status,
-                "SimpleActionClass should complete, but got: ${agentProcess.status}")
+            assertEquals(
+                AgentProcessStatusCode.COMPLETED, agentProcess.status,
+                "SimpleActionClass should complete, but got: ${agentProcess.status}"
+            )
             val result = agentProcess.lastResult()
             assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
             assertEquals("processed: test input", (result as ProcessedData).content)
@@ -203,13 +211,16 @@ class ActionClassNestingTest {
             // The important thing is that the ActionClass was run and produced a result
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                    agentProcess.status == AgentProcessStatusCode.STUCK,
+                        agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
             // Check that the ActionClass's result is on the blackboard
             val result = agentProcess.lastResult()
-            assertTrue(result is ProcessedData, "Expected ProcessedData but got $result (objects: ${agentProcess.objects})")
+            assertTrue(
+                result is ProcessedData,
+                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})"
+            )
             assertEquals("processed: test input", (result as ProcessedData).content)
         }
 
@@ -231,49 +242,51 @@ class ActionClassNestingTest {
             // The outer agent may be STUCK (no more actions) or COMPLETED
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                    agentProcess.status == AgentProcessStatusCode.STUCK,
+                        agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
             // Check that the nested ActionClass result is on the blackboard
             val result = agentProcess.lastResult()
-            assertTrue(result is ProcessedData,
-                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})")
+            assertTrue(
+                result is ProcessedData,
+                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})"
+            )
             assertEquals("processed: multi-test", (result as ProcessedData).content)
         }
     }
 
     @Nested
-    inner class ActionClassVsWorkflowComparison {
+    inner class FlowVsFlowReturningComparison {
 
         @Test
         fun `ActionClass and Workflow are distinct interfaces`() {
-            val actionClass = SimpleActionClass("test")
-            val workflow = SimpleWorkflow("test")
+            val actionClass = SimpleFlow("test")
+            val workflow = SimpleFlowReturning("test")
 
-            assertTrue(actionClass is ActionClass)
-            assertFalse(actionClass is Workflow<*>)
+            assertTrue(actionClass is Flow)
+            assertFalse(actionClass is FlowReturning<*>)
 
-            assertTrue(workflow is Workflow<*>)
-            assertFalse(workflow is ActionClass)
+            assertTrue(workflow is FlowReturning<*>)
+            assertFalse(workflow is Flow)
         }
 
         @Test
         fun `class can implement both ActionClass and Workflow`() {
             val dual = DualInterfaceClass("test")
-            assertTrue(dual is ActionClass)
-            assertTrue(dual is Workflow<*>)
-            assertTrue(runner.isWorkflow(dual))
-            assertTrue(runner.isActionClass(dual))
+            assertTrue(dual is Flow)
+            assertTrue(dual is FlowReturning<*>)
+            assertTrue(runner.isFlowReturning(dual))
+            assertTrue(runner.isFlow(dual))
         }
     }
 }
 
 // Empty ActionClass - no @Action methods, should not be runnable
-class EmptyActionClass : ActionClass
+class EmptyFlow : Flow
 
 // Simple ActionClass with one action
-class SimpleActionClass(val data: String) : ActionClass {
+class SimpleFlow(val data: String) : Flow {
 
     @Action
     @AchievesGoal(description = "Process data")
@@ -281,7 +294,7 @@ class SimpleActionClass(val data: String) : ActionClass {
 }
 
 // ActionClass for a second phase
-class FinalizingActionClass(val data: ProcessedData) : ActionClass {
+class FinalizingFlow(val data: ProcessedData) : Flow {
 
     @Action
     @AchievesGoal(description = "Finalize data")
@@ -289,7 +302,7 @@ class FinalizingActionClass(val data: ProcessedData) : ActionClass {
 }
 
 // Class implementing both ActionClass and Workflow
-class DualInterfaceClass(val data: String) : ActionClass, Workflow<ProcessedData> {
+class DualInterfaceClass(val data: String) : Flow, FlowReturning<ProcessedData> {
     override val outputType = ProcessedData::class.java
 
     @Action
@@ -302,8 +315,8 @@ class DualInterfaceClass(val data: String) : ActionClass, Workflow<ProcessedData
 class UtilityAgentWithActionClass {
 
     @Action
-    fun enterActionClass(it: UserInput): SimpleActionClass {
-        return SimpleActionClass(it.content)
+    fun enterActionClass(it: UserInput): SimpleFlow {
+        return SimpleFlow(it.content)
     }
 }
 
@@ -312,17 +325,17 @@ class UtilityAgentWithActionClass {
 class UtilityAgentWithNestedTransitions {
 
     @Action
-    fun startProcessing(it: UserInput): ProcessingActionClass {
-        return ProcessingActionClass(it.content)
+    fun startProcessing(it: UserInput): ProcessingFlow {
+        return ProcessingFlow(it.content)
     }
 
-    class ProcessingActionClass(val content: String) : ActionClass {
+    class ProcessingFlow(val content: String) : Flow {
 
         @Action
         @AchievesGoal(description = "Process and pass to finalizing")
-        fun process(): FinalizingActionClass {
+        fun process(): FinalizingFlow {
             val data = ProcessedData("processing: $content")
-            return FinalizingActionClass(data)
+            return FinalizingFlow(data)
         }
     }
 }

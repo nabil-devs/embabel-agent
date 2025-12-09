@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.embabel.agent.api.common.workflow
+package com.embabel.agent.api.common.subflow
 
 /**
  * Marker interface for classes that contain @Action methods and can be
@@ -24,7 +24,7 @@ package com.embabel.agent.api.common.workflow
  * - You want to return an action-containing class from an action
  * - You don't need to specify a specific output type for GOAP planning
  *
- * For GOAP planning where you need a known output type, use [Workflow] instead.
+ * For GOAP planning where you need a known output type, use [FlowReturning] instead.
  *
  * Example:
  * ```kotlin
@@ -36,6 +36,6 @@ package com.embabel.agent.api.common.workflow
  * }
  * ```
  *
- * @see Workflow for goal-oriented workflows with known output types
+ * @see FlowReturning for goal-oriented workflows with known output types
  */
-interface ActionClass
+interface Flow

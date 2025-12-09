@@ -307,7 +307,7 @@ This captures context when entering the workflow:
 class ReviewingWorkflow(
     val story: Story,  // <1>
     val reviewer: Reviewer,  // <2>
-) : Workflow<ReviewedStory> {
+) : FlowReturning<ReviewedStory> {
     override val outputType = ReviewedStory::class.java
 
     @Action
@@ -328,7 +328,7 @@ Using a common interface for related workflow classes enables type-safe transiti
 
 [source,kotlin]
 ----
-interface StoryFlow : Workflow<Story> {
+interface StoryFlow : FlowReturning<Story> {
     override val outputType: Class<Story>
         get() = Story::class.java
 }
@@ -352,11 +352,11 @@ fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
 ===== ActionClass: Simplified Nesting for Utility AI
 
 When using the Utility planner, you can use a simpler nesting pattern with `ActionClass`.
-Unlike `Workflow<O>`, `ActionClass` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
+Unlike `FlowReturning<O>`, `ActionClass` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
 
 [source,kotlin]
 ----
-interface ActionClass  // <1>
+interface Flow  // <1>
 ----
 
 <1> Marker interface with no methods - classes just need to implement it and have `@Action` methods
@@ -367,16 +367,16 @@ interface ActionClass  // <1>
 |===
 |Interface |Use When |Planner Support
 
-|`Workflow<O>`
+|`FlowReturning<O>`
 |You need GOAP planning in the nested flow, or want to declare the output type
 |GOAP and Utility
 
-|`ActionClass`
+|`Flow`
 |Using Utility AI and don't need to specify output type
 |Utility only
 |===
 
-IMPORTANT: `ActionClass` nesting only works with the Utility planner.
+IMPORTANT: `Flow` nesting only works with the Utility planner.
 If you try to return an `ActionClass` from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
 
 ====== Example: ActionClass with Utility AI
@@ -437,12 +437,12 @@ class ProcessingPhase(val data: String) : ActionClass {
 
 ====== Dual Interface Classes
 
-A class can implement both `ActionClass` and `Workflow<O>`.
-In this case, it works with both planners - `Workflow<O>` behavior takes precedence:
+A class can implement both `Flow` and `FlowReturning<O>`.
+In this case, it works with both planners - `FlowReturning<O>` behavior takes precedence:
 
 [source,kotlin]
 ----
-class DualPhase(val data: String) : ActionClass, Workflow<Result> {
+class DualPhase(val data: String) : Flow, FlowReturning<Result> {
     override val outputType = Result::class.java  // <1>
 
     @Action
