@@ -20,7 +20,7 @@ import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.subflow.FlowReturning
-import com.embabel.agent.api.common.workflow.WorkflowRunner
+import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessOptions
 import com.embabel.agent.domain.io.UserInput
@@ -44,20 +44,20 @@ class FlowReturningNestingTest {
 
         @Test
         fun `plain data class is not a workflow`() {
-            val runner = WorkflowRunner()
+            val runner = FlowNestingManager()
             assertFalse(runner.isFlowReturning(TestStory("test")))
         }
 
         @Test
         fun `class implementing Workflow with @Action methods is detected`() {
-            val runner = WorkflowRunner()
+            val runner = FlowNestingManager()
             val workflow = SimpleFlowReturning("data")
             assertTrue(runner.isFlowReturning(workflow))
         }
 
         @Test
         fun `Workflow without @Action methods is not runnable`() {
-            val runner = WorkflowRunner()
+            val runner = FlowNestingManager()
             val workflow = EmptyFlowReturning()
             assertFalse(runner.isFlowReturning(workflow))
         }

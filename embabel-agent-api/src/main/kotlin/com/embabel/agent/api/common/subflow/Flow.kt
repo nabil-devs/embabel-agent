@@ -28,7 +28,7 @@ package com.embabel.agent.api.common.subflow
  *
  * Example:
  * ```kotlin
- * class ProcessingPhase(val data: String) : ActionClass {
+ * class ProcessingPhase(val data: String) : Flow {
  *     @Action
  *     fun processData(): Result {
  *         return Result(data.uppercase())

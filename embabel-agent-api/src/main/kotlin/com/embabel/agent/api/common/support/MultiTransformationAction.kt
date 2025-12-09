@@ -18,7 +18,6 @@ package com.embabel.agent.api.common.support
 import com.embabel.agent.api.common.SomeOf
 import com.embabel.agent.api.common.Transformation
 import com.embabel.agent.api.common.TransformationActionContext
-import com.embabel.agent.api.common.workflow.WorkflowRunner
 import com.embabel.agent.core.*
 import com.embabel.agent.core.support.AbstractAction
 import com.embabel.plan.CostComputation
@@ -78,9 +77,8 @@ class MultiTransformationAction<O : Any>(
             )
         )
         if (rawOutput != null && !(rawOutput is Unit || rawOutput::class.java == Void::class.java)) {
-            // Process the output through WorkflowRunner to handle nested workflows/action classes
-            val output = WorkflowRunner.DEFAULT.processOutput(rawOutput, processContext)
-            // Check if output was transformed by WorkflowRunner (different from rawOutput)
+            // Process the output through FlowNestingManager to handle nested workflows/action classes
+            val output = FlowNestingManager.DEFAULT.processOutput(rawOutput, processContext)
             val wasTransformed = output !== rawOutput
             bindOutput(processContext, output, wasTransformed)
         }
@@ -89,11 +87,11 @@ class MultiTransformationAction<O : Any>(
     private fun bindOutput(
         processContext: ProcessContext,
         output: Any,
-        wasTransformedByWorkflowRunner: Boolean = false,
+        wasTransformedByFlowNestingManager: Boolean = false,
     ) {
-        // Skip type check if output was transformed by WorkflowRunner (nested workflow/action class)
+        // Skip type check if output was transformed by FlowNestingManager (nested workflow/action class)
         // In that case, the output type is the result of the nested agent, not the declared return type
-        if (!wasTransformedByWorkflowRunner && !outputClass.isInstance(output)) {
+        if (!wasTransformedByFlowNestingManager && !outputClass.isInstance(output)) {
             throw IllegalArgumentException(
                 """
                 Output of action $name is not of type ${outputClass.name}.

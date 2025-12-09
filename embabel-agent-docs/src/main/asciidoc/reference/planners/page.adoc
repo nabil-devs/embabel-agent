@@ -22,7 +22,7 @@ The planning strategies currently supported out of the box are:
 |===
 
 TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested flow.
-Utility AI also supports the simpler `ActionClass` interface for nesting without specifying output types.
+Utility AI also supports the simpler `Flow` interface for nesting without specifying output types.
 Nested workflows are good for looping behaviors, multi-phase processes, and sub-workflows with their own planning.
 
 As most of the documentation covers GOAP, this section discusses the alternative planners and nested workflows.
@@ -348,11 +348,11 @@ fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
 }
 ----
 
-[[reference.planners__actionclass]]
-===== ActionClass: Simplified Nesting for Utility AI
+[[reference.planners__Flow]]
+===== Flow: Simplified Nesting for Utility AI
 
-When using the Utility planner, you can use a simpler nesting pattern with `ActionClass`.
-Unlike `FlowReturning<O>`, `ActionClass` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
+When using the Utility planner, you can use a simpler nesting pattern with `Flow`.
+Unlike `FlowReturning<O>`, `Flow` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
 
 [source,kotlin]
 ----
@@ -361,7 +361,7 @@ interface Flow  // <1>
 
 <1> Marker interface with no methods - classes just need to implement it and have `@Action` methods
 
-====== When to Use ActionClass vs Workflow
+====== When to Use Flow vs Workflow
 
 [cols="1,2,2",options="header"]
 |===
@@ -377,14 +377,14 @@ interface Flow  // <1>
 |===
 
 IMPORTANT: `Flow` nesting only works with the Utility planner.
-If you try to return an `ActionClass` from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
+If you try to return an `Flow` from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
 
-====== Example: ActionClass with Utility AI
+====== Example: Flow with Utility AI
 
 [source,kotlin]
 ----
-// Simple ActionClass - no output type needed
-class ProcessingPhase(val data: String) : ActionClass {  // <1>
+// Simple Flow - no output type needed
+class ProcessingPhase(val data: String) : Flow {  // <1>
 
     @Action
     @AchievesGoal(description = "Process data")  // <2>
@@ -393,7 +393,7 @@ class ProcessingPhase(val data: String) : ActionClass {  // <1>
     }
 }
 
-@Agent(description = "Utility agent with ActionClass", planner = PlannerType.UTILITY)
+@Agent(description = "Utility agent with Flow", planner = PlannerType.UTILITY)
 class DataProcessor {
 
     @Action
@@ -403,17 +403,17 @@ class DataProcessor {
 }
 ----
 
-<1> `ActionClass` is simpler than `Workflow<O>` - no `outputType` property needed
+<1> `Flow` is simpler than `Workflow<O>` - no `outputType` property needed
 <2> Still use `@AchievesGoal` to mark terminal actions
-<3> Returning an `ActionClass` from an action enters it as a nested agent (Utility AI only)
+<3> Returning an `Flow` from an action enters it as a nested agent (Utility AI only)
 
-====== ActionClass Chaining
+====== Flow Chaining
 
-ActionClass instances can return other ActionClass instances, enabling multi-phase processing:
+Flow instances can return other Flow instances, enabling multi-phase processing:
 
 [source,kotlin]
 ----
-class ValidationPhase(val data: String) : ActionClass {
+class ValidationPhase(val data: String) : Flow {
 
     @Action
     @AchievesGoal(description = "Validate and proceed")
@@ -423,7 +423,7 @@ class ValidationPhase(val data: String) : ActionClass {
     }
 }
 
-class ProcessingPhase(val data: String) : ActionClass {
+class ProcessingPhase(val data: String) : Flow {
 
     @Action
     @AchievesGoal(description = "Process complete")
@@ -433,7 +433,7 @@ class ProcessingPhase(val data: String) : ActionClass {
 }
 ----
 
-<1> Returning another `ActionClass` chains to the next phase
+<1> Returning another `Flow` chains to the next phase
 
 ====== Dual Interface Classes
 

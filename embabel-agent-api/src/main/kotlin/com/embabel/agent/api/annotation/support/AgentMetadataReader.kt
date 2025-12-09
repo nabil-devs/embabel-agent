@@ -78,8 +78,8 @@ internal data class AgenticInfo(
     val isFlowReturning: Boolean = FlowReturning::class.java.isAssignableFrom(targetType)
 
     /**
-     * Does this type implement ActionClass interface?
-     * ActionClass is a simpler marker for classes with @Action methods that don't need
+     * Does this type implement Flow interface?
+     * Flow is a simpler marker for classes with @Action methods that don't need
      * a specified output type (used with Utility AI planner).
      */
     val isFlow: Boolean = Flow::class.java.isAssignableFrom(targetType)
@@ -88,7 +88,7 @@ internal data class AgenticInfo(
 
     /**
      * Is this type agentic at all?
-     * True if it has @EmbabelComponent, @Agent, implements Workflow interface, or implements ActionClass interface.
+     * True if it has @EmbabelComponent, @Agent, implements Workflow interface, or implements Flow interface.
      */
     fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isFlowReturning || isFlow
 
@@ -215,8 +215,8 @@ class AgentMetadataReader(
                     )
                 )
             }
-            // For ActionClass implementations (without @Agent annotation), add NIRVANA goal
-            // since ActionClass is meant to be used with Utility AI which needs NIRVANA
+            // For Flow implementations (without @Agent annotation), add NIRVANA goal
+            // since Flow is meant to be used with Utility AI which needs NIRVANA
             if (agenticInfo.isFlow && !agenticInfo.isFlowReturning && agenticInfo.agentAnnotation == null) {
                 add(NIRVANA)
             }

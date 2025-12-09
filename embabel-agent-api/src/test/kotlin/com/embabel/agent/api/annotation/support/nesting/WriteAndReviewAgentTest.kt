@@ -17,7 +17,7 @@ package com.embabel.agent.api.annotation.support.nesting
 
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.subflow.FlowReturning
-import com.embabel.agent.api.common.workflow.WorkflowRunner
+import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessOptions
 import com.embabel.agent.domain.io.UserInput
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test
 class WriteAndReviewAgentTest {
 
     private val reader = AgentMetadataReader()
-    private val runner = WorkflowRunner()
+    private val runner = FlowNestingManager()
 
     @Nested
     inner class DomainTypes {
