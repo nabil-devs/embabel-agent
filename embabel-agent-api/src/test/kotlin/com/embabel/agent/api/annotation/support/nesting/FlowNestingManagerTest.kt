@@ -280,6 +280,147 @@ class FlowNestingManagerTest {
             assertTrue(runner.isFlow(dual))
         }
     }
+
+    @Nested
+    inner class AgentClassDetection {
+
+        @Test
+        fun `plain data class is not an @Agent class`() {
+            assertFalse(runner.isAgentClass(ProcessedData("test")))
+        }
+
+        @Test
+        fun `class with @Agent annotation and @Action methods is detected`() {
+            val agent = NestedAgentProcessor()
+            assertTrue(runner.isAgentClass(agent))
+        }
+
+        @Test
+        fun `@Agent class without @Action methods is not runnable`() {
+            val agent = EmptyAgentClass()
+            assertFalse(runner.isAgentClass(agent))
+        }
+
+        @Test
+        fun `@Agent class is not detected as Flow or FlowReturning`() {
+            val agent = NestedAgentProcessor()
+            assertFalse(runner.isFlow(agent))
+            assertFalse(runner.isFlowReturning(agent))
+        }
+
+        @Test
+        fun `Flow is not detected as @Agent class`() {
+            val flow = SimpleFlow("test")
+            assertFalse(runner.isAgentClass(flow))
+        }
+    }
+
+    @Nested
+    inner class AgentClassRunnableDetection {
+
+        @Test
+        fun `@Agent class is NOT runnable with GOAP planner`() {
+            val agent = NestedAgentProcessor()
+            assertFalse(runner.isRunnableNestedAgent(agent, PlannerType.GOAP))
+        }
+
+        @Test
+        fun `@Agent class IS runnable with UTILITY planner`() {
+            val agent = NestedAgentProcessor()
+            assertTrue(runner.isRunnableNestedAgent(agent, PlannerType.UTILITY))
+        }
+    }
+
+    @Nested
+    inner class AgentClassExecution {
+
+        @Test
+        fun `agent returning @Agent class executes nested agent with Utility planner`() {
+            val parentAgent = UtilityAgentWithNestedAgent()
+            val metadata = reader.createAgentMetadata(parentAgent)
+            assertNotNull(metadata)
+
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+            val agentProcess = ap.runAgentFrom(
+                metadata as CoreAgent,
+                ProcessOptions().withPlannerType(PlannerType.UTILITY),
+                mapOf("it" to UserInput("agent-test"))
+            )
+
+            assertTrue(
+                agentProcess.status == AgentProcessStatusCode.COMPLETED ||
+                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                "Agent should at least have run, but status was: ${agentProcess.status}"
+            )
+
+            val result = agentProcess.lastResult()
+            assertTrue(
+                result is ProcessedData,
+                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})"
+            )
+            assertEquals("agent processed: agent-test", (result as ProcessedData).content)
+        }
+
+        @Test
+        fun `@Agent class can chain to Flow`() {
+            val agent = AgentThatReturnsFlow()
+            val metadata = reader.createAgentMetadata(agent)
+            assertNotNull(metadata)
+
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+            val agentProcess = ap.runAgentFrom(
+                metadata as CoreAgent,
+                ProcessOptions().withPlannerType(PlannerType.UTILITY),
+                mapOf("it" to UserInput("chain-test"))
+            )
+
+            assertTrue(
+                agentProcess.status == AgentProcessStatusCode.COMPLETED ||
+                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                "Agent should at least have run, but status was: ${agentProcess.status}"
+            )
+
+            val result = agentProcess.lastResult()
+            assertTrue(
+                result is ProcessedData,
+                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})"
+            )
+            assertEquals("processed: chain-test", (result as ProcessedData).content)
+        }
+    }
+}
+
+// Empty @Agent class - no @Action methods, should not be runnable
+@Agent(description = "Empty agent")
+class EmptyAgentClass
+
+// Simple @Agent class with one action - uses UserInput from blackboard instead of constructor param
+@Agent(description = "Nested agent processor")
+class NestedAgentProcessor {
+
+    @Action
+    @AchievesGoal(description = "Process data via agent")
+    fun process(it: UserInput): ProcessedData = ProcessedData("agent processed: ${it.content}")
+}
+
+// Utility AI agent that returns an @Agent class
+@Agent(description = "Utility agent with nested agent", planner = PlannerType.UTILITY)
+class UtilityAgentWithNestedAgent {
+
+    @Action
+    fun delegateToAgent(it: UserInput): NestedAgentProcessor {
+        return NestedAgentProcessor()
+    }
+}
+
+// @Agent class that returns a Flow
+@Agent(description = "Agent that returns Flow", planner = PlannerType.UTILITY)
+class AgentThatReturnsFlow {
+
+    @Action
+    fun delegateToFlow(it: UserInput): SimpleFlow {
+        return SimpleFlow(it.content)
+    }
 }
 
 // Empty Flow - no @Action methods, should not be runnable

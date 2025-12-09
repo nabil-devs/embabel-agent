@@ -22,7 +22,7 @@ The planning strategies currently supported out of the box are:
 |===
 
 TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested flow.
-Utility AI also supports the simpler `Flow` interface for nesting without specifying output types.
+Utility AI also supports the simpler `Flow` interface and `@Agent`-annotated classes for nesting without specifying output types.
 Nested workflows are good for looping behaviors, multi-phase processes, and sub-workflows with their own planning.
 
 As most of the documentation covers GOAP, this section discusses the alternative planners and nested workflows.
@@ -361,11 +361,11 @@ interface Flow  // <1>
 
 <1> Marker interface with no methods - classes just need to implement it and have `@Action` methods
 
-====== When to Use Flow vs Workflow
+====== When to Use Flow vs Workflow vs @Agent
 
 [cols="1,2,2",options="header"]
 |===
-|Interface |Use When |Planner Support
+|Type |Use When |Planner Support
 
 |`FlowReturning<O>`
 |You need GOAP planning in the nested flow, or want to declare the output type
@@ -374,10 +374,14 @@ interface Flow  // <1>
 |`Flow`
 |Using Utility AI and don't need to specify output type
 |Utility only
+
+|`@Agent` class
+|Composing existing agents or when you don't want to implement an interface
+|Utility only
 |===
 
-IMPORTANT: `Flow` nesting only works with the Utility planner.
-If you try to return an `Flow` from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
+IMPORTANT: `Flow` and `@Agent` class nesting only works with the Utility planner.
+If you try to return a `Flow` or `@Agent` instance from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
 
 ====== Example: Flow with Utility AI
 
@@ -452,3 +456,90 @@ class DualPhase(val data: String) : Flow, FlowReturning<Result> {
 ----
 
 <1> When both interfaces are implemented, the class works with both GOAP and Utility planners
+
+[[reference.planners__nested_agents]]
+===== @Agent Classes as Nested Agents
+
+When using the Utility planner, you can also return instances of `@Agent`-annotated classes from actions.
+This enables injecting agents as dependencies and delegating work to them.
+
+[source,kotlin]
+----
+@Agent(description = "Text processor agent")
+class TextProcessorAgent(val text: String) {  // <1>
+
+    @Action
+    @AchievesGoal(description = "Process text")
+    fun process(): ProcessedText = ProcessedText(text.uppercase())
+}
+
+@Agent(description = "Orchestrator agent", planner = PlannerType.UTILITY)
+class OrchestratorAgent {
+
+    @Action
+    fun delegateProcessing(input: UserInput): TextProcessorAgent {  // <2>
+        return TextProcessorAgent(input.content)
+    }
+}
+----
+
+<1> The nested `@Agent` class has its own actions and goals
+<2> Returning an `@Agent` instance runs it as a nested agent (Utility AI only)
+
+====== When to Use @Agent Classes vs Flow
+
+[cols="1,2,2",options="header"]
+|===
+|Type |Use When |Notes
+
+|`FlowReturning<O>`
+|Need GOAP planning or explicit output type
+|Works with both planners
+
+|`Flow`
+|Simple nesting without output type
+|Utility only, requires implementing interface
+
+|`@Agent` class
+|Injecting/composing existing agents
+|Utility only, no interface needed
+|===
+
+====== Chaining Nested Types
+
+Nested agents, Flows, and FlowReturning instances can chain to each other:
+
+[source,kotlin]
+----
+@Agent(description = "Multi-phase processor", planner = PlannerType.UTILITY)
+class MultiPhaseAgent {
+
+    @Action
+    fun startWithAgent(input: UserInput): ValidatorAgent {  // <1>
+        return ValidatorAgent(input.content)
+    }
+}
+
+@Agent(description = "Validator")
+class ValidatorAgent(val data: String) {
+
+    @Action
+    @AchievesGoal(description = "Validate and proceed")
+    fun validate(): ProcessingFlow {  // <2>
+        return ProcessingFlow(data)
+    }
+}
+
+class ProcessingFlow(val data: String) : Flow {
+
+    @Action
+    @AchievesGoal(description = "Process complete")
+    fun process(): Result = Result(data.processed())
+}
+----
+
+<1> Start by delegating to an `@Agent` class
+<2> The `@Agent` can return a `Flow` to continue processing
+
+IMPORTANT: `@Agent` class nesting only works with the Utility planner.
+If you try to return an `@Agent` instance when using GOAP, the raw object will be returned (not executed as a nested agent).

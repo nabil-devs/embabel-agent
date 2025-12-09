@@ -15,6 +15,7 @@
  */
 package com.embabel.agent.api.common.support
 
+import com.embabel.agent.api.annotation.Agent
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.subflow.Flow
@@ -25,15 +26,15 @@ import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
 /**
- * Detects when an action returns a Workflow or Flow instance and runs it as a nested sub-agent.
+ * Detects when an action returns a Workflow, Flow, or @Agent instance and runs it as a nested sub-agent.
  *
  * This enables composition where an action can return an instance of a class
- * implementing Workflow or Flow to enter a nested flow. The nested flow runs to
- * completion, and its result becomes available on the blackboard.
+ * implementing Workflow, Flow, or annotated with @Agent to enter a nested flow.
+ * The nested flow runs to completion, and its result becomes available on the blackboard.
  *
  * For GOAP planning, classes must implement [com.embabel.agent.api.common.subflow.FlowReturning] to specify their output type.
- * For Utility AI planning, classes can implement either [com.embabel.agent.api.common.subflow.FlowReturning] or [com.embabel.agent.api.common.subflow.Flow]
- * since no goal-oriented planning is needed.
+ * For Utility AI planning, classes can implement [com.embabel.agent.api.common.subflow.FlowReturning], [com.embabel.agent.api.common.subflow.Flow],
+ * or be annotated with @Agent since no goal-oriented planning is needed.
  */
 internal class FlowNestingManager(
     private val agentMetadataReader: AgentMetadataReader = AgentMetadataReader(),
@@ -55,7 +56,7 @@ internal class FlowNestingManager(
     }
 
     /**
-     * Check if the given object is an Flow that can be run as a nested agent.
+     * Check if the given object is a Flow that can be run as a nested agent.
      * This requires the object to implement Flow and have @Action methods.
      */
     fun isFlow(obj: Any): Boolean {
@@ -68,15 +69,31 @@ internal class FlowNestingManager(
     }
 
     /**
+     * Check if the given object is an @Agent-annotated class that can be run as a nested agent.
+     * This requires the object's class to have the @Agent annotation and have @Action methods.
+     */
+    fun isAgentClass(obj: Any): Boolean {
+        val agentAnnotation = obj.javaClass.getAnnotation(Agent::class.java)
+        if (agentAnnotation == null) {
+            return false
+        }
+        // Verify it has @Action methods that can be executed
+        val metadata = agentMetadataReader.createAgentMetadata(obj)
+        return metadata != null && metadata.actions.isNotEmpty()
+    }
+
+    /**
      * Check if the given object can be run as a nested agent based on the planner type.
-     * - For Workflow: always runnable (provides output type for GOAP)
+     * - For FlowReturning: always runnable (provides output type for GOAP)
      * - For Flow: only runnable with Utility AI (no output type needed)
+     * - For @Agent classes: only runnable with Utility AI (no output type needed)
      */
     fun isRunnableNestedAgent(
         obj: Any,
         plannerType: PlannerType,
     ): Boolean {
-        return isFlowReturning(obj) || (plannerType == PlannerType.UTILITY && isFlow(obj))
+        return isFlowReturning(obj) ||
+            (plannerType == PlannerType.UTILITY && (isFlow(obj) || isAgentClass(obj)))
     }
 
     /**
@@ -109,7 +126,24 @@ internal class FlowNestingManager(
         flow: Flow,
         processContext: ProcessContext,
     ): Any? {
-        return runNestedAgent(flow, processContext, "action class")
+        return runNestedAgent(flow, processContext, "flow")
+    }
+
+    /**
+     * Run an @Agent-annotated class as a nested sub-agent within the given process context.
+     * This is typically used with Utility AI where no output type is needed.
+     * Returns the result of the nested agent execution, or null if the agent class
+     * could not be run as an agent.
+     *
+     * @param agent The @Agent-annotated instance
+     * @param processContext The parent process context
+     * @return The result of the nested agent, or null
+     */
+    fun runAgentClass(
+        agent: Any,
+        processContext: ProcessContext,
+    ): Any? {
+        return runNestedAgent(agent, processContext, "@Agent class")
     }
 
     /**
@@ -177,12 +211,12 @@ internal class FlowNestingManager(
     }
 
     /**
-     * Process an action output - if it's a FlowReturning or Flow, run it and return the nested result.
+     * Process an action output - if it's a FlowReturning, Flow, or @Agent class, run it and return the nested result.
      * Otherwise, return the original output.
      *
      * FlowReturning instances are always processed.
-     * Flow instances are only processed when the planner type is UTILITY,
-     * as Flow doesn't provide an output type needed for GOAP planning.
+     * Flow and @Agent class instances are only processed when the planner type is UTILITY,
+     * as they don't provide an output type needed for GOAP planning.
      */
     fun processOutput(
         output: Any,
@@ -205,8 +239,21 @@ internal class FlowNestingManager(
 
         // Handle Flow (only with Utility AI)
         if (output is Flow && plannerType == PlannerType.UTILITY && isFlow(output)) {
-            logger.debug("Output is an Flow (Utility AI), running as nested agent: {}", output::class.java.name)
+            logger.debug("Output is a Flow (Utility AI), running as nested agent: {}", output::class.java.name)
             val nestedResult = runFlow(output, processContext)
+
+            // If the nested result is also runnable, recurse
+            if (nestedResult != null && isRunnableNestedAgent(nestedResult, plannerType)) {
+                return processOutput(nestedResult, processContext)
+            }
+
+            return nestedResult ?: output
+        }
+
+        // Handle @Agent class (only with Utility AI)
+        if (plannerType == PlannerType.UTILITY && isAgentClass(output)) {
+            logger.debug("Output is an @Agent class (Utility AI), running as nested agent: {}", output::class.java.name)
+            val nestedResult = runAgentClass(output, processContext)
 
             // If the nested result is also runnable, recurse
             if (nestedResult != null && isRunnableNestedAgent(nestedResult, plannerType)) {
