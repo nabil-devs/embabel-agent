@@ -16,16 +16,21 @@
 package com.embabel.agent.api.common.workflow
 
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
+import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.ProcessContext
 import org.slf4j.LoggerFactory
 
 /**
- * Detects when an action returns a Workflow instance and runs it as a nested sub-agent.
+ * Detects when an action returns a Workflow or ActionClass instance and runs it as a nested sub-agent.
  *
  * This enables composition where an action can return an instance of a class
- * implementing Workflow to enter a nested GOAP flow. The nested flow runs to
+ * implementing Workflow or ActionClass to enter a nested flow. The nested flow runs to
  * completion, and its result becomes available on the blackboard.
+ *
+ * For GOAP planning, classes must implement [Workflow] to specify their output type.
+ * For Utility AI planning, classes can implement either [Workflow] or [ActionClass]
+ * since no goal-oriented planning is needed.
  */
 class WorkflowRunner(
     private val agentMetadataReader: AgentMetadataReader = AgentMetadataReader(),
@@ -47,6 +52,28 @@ class WorkflowRunner(
     }
 
     /**
+     * Check if the given object is an ActionClass that can be run as a nested agent.
+     * This requires the object to implement ActionClass and have @Action methods.
+     */
+    fun isActionClass(obj: Any): Boolean {
+        if (obj !is ActionClass) {
+            return false
+        }
+        // Verify it has @Action methods that can be executed
+        val metadata = agentMetadataReader.createAgentMetadata(obj)
+        return metadata != null && metadata.actions.isNotEmpty()
+    }
+
+    /**
+     * Check if the given object can be run as a nested agent based on the planner type.
+     * - For Workflow: always runnable (provides output type for GOAP)
+     * - For ActionClass: only runnable with Utility AI (no output type needed)
+     */
+    fun isRunnableNestedAgent(obj: Any, plannerType: PlannerType): Boolean {
+        return isWorkflow(obj) || (plannerType == PlannerType.UTILITY && isActionClass(obj))
+    }
+
+    /**
      * Run the workflow as a nested sub-agent within the given process context.
      * Returns the result of the nested agent execution, or null if the workflow
      * could not be run as an agent.
@@ -59,35 +86,65 @@ class WorkflowRunner(
         workflow: Workflow<*>,
         processContext: ProcessContext,
     ): Any? {
-        val workflowClass = workflow::class.java
-        logger.debug("Attempting to run workflow as nested agent: {}", workflowClass.name)
+        return runNestedAgent(workflow, processContext, "workflow")
+    }
+
+    /**
+     * Run an ActionClass as a nested sub-agent within the given process context.
+     * This is typically used with Utility AI where no output type is needed.
+     * Returns the result of the nested agent execution, or null if the action class
+     * could not be run as an agent.
+     *
+     * @param actionClass The action class instance
+     * @param processContext The parent process context
+     * @return The result of the nested agent, or null
+     */
+    fun runActionClass(
+        actionClass: ActionClass,
+        processContext: ProcessContext,
+    ): Any? {
+        return runNestedAgent(actionClass, processContext, "action class")
+    }
+
+    /**
+     * Internal method to run any object with @Action methods as a nested agent.
+     */
+    private fun runNestedAgent(
+        instance: Any,
+        processContext: ProcessContext,
+        typeLabel: String,
+    ): Any? {
+        val instanceClass = instance::class.java
+        logger.debug("Attempting to run {} as nested agent: {}", typeLabel, instanceClass.name)
 
         // Warn if this is an inner class (non-static nested class) as it holds a reference
         // to the enclosing instance, which can cause issues with workflow persistence
-        if (isInnerClass(workflowClass)) {
+        if (isInnerClass(instanceClass)) {
             logger.warn(
-                "Workflow class '{}' is an inner class (non-static). This may cause issues with " +
+                "{} class '{}' is an inner class (non-static). This may cause issues with " +
                     "workflow persistence. Consider making it a nested class (static) or a top-level class.",
-                workflowClass.name
+                typeLabel.replaceFirstChar { it.uppercase() },
+                instanceClass.name
             )
         }
 
-        // Create agent metadata from the workflow instance
-        val agentScope = agentMetadataReader.createAgentMetadata(workflow)
+        // Create agent metadata from the instance
+        val agentScope = agentMetadataReader.createAgentMetadata(instance)
         if (agentScope == null) {
-            logger.warn("Could not create agent metadata from workflow: {}", workflowClass.name)
+            logger.warn("Could not create agent metadata from {}: {}", typeLabel, instanceClass.name)
             return null
         }
 
         // Convert the scope to an agent
         val agent = agentScope.createAgent(
             name = agentScope.name,
-            provider = workflowClass.`package`?.name ?: "",
+            provider = instanceClass.`package`?.name ?: "",
             description = agentScope.description,
         )
 
         logger.info(
-            "Running nested workflow agent: {} with {} actions",
+            "Running nested {} agent: {} with {} actions",
+            typeLabel,
             agent.name,
             agent.actions.size
         )
@@ -114,30 +171,46 @@ class WorkflowRunner(
     }
 
     /**
-     * Process an action output - if it's a Workflow, run it and return the nested result.
+     * Process an action output - if it's a Workflow or ActionClass, run it and return the nested result.
      * Otherwise return the original output.
+     *
+     * For Workflow instances, they are always processed.
+     * For ActionClass instances, they are only processed when the planner type is UTILITY
+     * (since ActionClass doesn't provide an output type needed for GOAP planning).
      */
     fun processOutput(
         output: Any,
         processContext: ProcessContext,
     ): Any {
-        if (output !is Workflow<*>) {
-            return output
+        val plannerType = processContext.processOptions.plannerType
+
+        // Handle Workflow (always processable)
+        if (output is Workflow<*> && isWorkflow(output)) {
+            logger.debug("Output is a workflow, running as nested agent: {}", output::class.java.name)
+            val nestedResult = runWorkflow(output, processContext)
+
+            // If the nested result is also runnable, recurse
+            if (nestedResult != null && isRunnableNestedAgent(nestedResult, plannerType)) {
+                return processOutput(nestedResult, processContext)
+            }
+
+            return nestedResult ?: output
         }
 
-        if (!isWorkflow(output)) {
-            return output
+        // Handle ActionClass (only with Utility AI)
+        if (output is ActionClass && plannerType == PlannerType.UTILITY && isActionClass(output)) {
+            logger.debug("Output is an ActionClass (Utility AI), running as nested agent: {}", output::class.java.name)
+            val nestedResult = runActionClass(output, processContext)
+
+            // If the nested result is also runnable, recurse
+            if (nestedResult != null && isRunnableNestedAgent(nestedResult, plannerType)) {
+                return processOutput(nestedResult, processContext)
+            }
+
+            return nestedResult ?: output
         }
 
-        logger.debug("Output is a workflow, running as nested agent: {}", output::class.java.name)
-        val nestedResult = runWorkflow(output, processContext)
-
-        // If the nested result is also a workflow, recurse
-        if (nestedResult != null && nestedResult is Workflow<*> && isWorkflow(nestedResult)) {
-            return processOutput(nestedResult, processContext)
-        }
-
-        return nestedResult ?: output
+        return output
     }
 
     /**

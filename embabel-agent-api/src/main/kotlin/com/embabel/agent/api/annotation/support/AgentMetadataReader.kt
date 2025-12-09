@@ -23,6 +23,7 @@ import com.embabel.agent.api.common.OperationContext
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
+import com.embabel.agent.api.common.workflow.ActionClass
 import com.embabel.agent.api.common.workflow.Workflow
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
@@ -76,13 +77,20 @@ internal data class AgenticInfo(
      */
     val isWorkflow: Boolean = Workflow::class.java.isAssignableFrom(targetType)
 
+    /**
+     * Does this type implement ActionClass interface?
+     * ActionClass is a simpler marker for classes with @Action methods that don't need
+     * a specified output type (used with Utility AI planner).
+     */
+    val isActionClass: Boolean = ActionClass::class.java.isAssignableFrom(targetType)
+
     fun isAgent(): Boolean = agentAnnotation != null
 
     /**
      * Is this type agentic at all?
-     * True if it has @EmbabelComponent, @Agent, or implements Workflow interface.
+     * True if it has @EmbabelComponent, @Agent, implements Workflow interface, or implements ActionClass interface.
      */
-    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isWorkflow
+    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isWorkflow || isActionClass
 
     fun validationErrors(): Collection<String> {
         val errors = mutableListOf<String>()
@@ -206,6 +214,11 @@ class AgentMetadataReader(
                         outputType = JvmType(workflowOutputType),
                     )
                 )
+            }
+            // For ActionClass implementations (without @Agent annotation), add NIRVANA goal
+            // since ActionClass is meant to be used with Utility AI which needs NIRVANA
+            if (agenticInfo.isActionClass && !agenticInfo.isWorkflow && agenticInfo.agentAnnotation == null) {
+                add(NIRVANA)
             }
         }
 

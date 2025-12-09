@@ -78,17 +78,22 @@ class MultiTransformationAction<O : Any>(
             )
         )
         if (rawOutput != null && !(rawOutput is Unit || rawOutput::class.java == Void::class.java)) {
-            // Process the output through WorkflowRunner to handle nested workflows
+            // Process the output through WorkflowRunner to handle nested workflows/action classes
             val output = WorkflowRunner.DEFAULT.processOutput(rawOutput, processContext)
-            bindOutput(processContext, output)
+            // Check if output was transformed by WorkflowRunner (different from rawOutput)
+            val wasTransformed = output !== rawOutput
+            bindOutput(processContext, output, wasTransformed)
         }
     }
 
     private fun bindOutput(
         processContext: ProcessContext,
         output: Any,
+        wasTransformedByWorkflowRunner: Boolean = false,
     ) {
-        if (!outputClass.isInstance(output)) {
+        // Skip type check if output was transformed by WorkflowRunner (nested workflow/action class)
+        // In that case, the output type is the result of the nested agent, not the declared return type
+        if (!wasTransformedByWorkflowRunner && !outputClass.isInstance(output)) {
             throw IllegalArgumentException(
                 """
                 Output of action $name is not of type ${outputClass.name}.

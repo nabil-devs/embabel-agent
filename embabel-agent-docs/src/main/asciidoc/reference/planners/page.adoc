@@ -21,7 +21,8 @@ The planning strategies currently supported out of the box are:
 |Selects the highest-value available action at each step. Ideal when you don't know the outcome upfront.
 |===
 
-TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested GOAP flow.
+TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested flow.
+Utility AI also supports the simpler `ActionClass` interface for nesting without specifying output types.
 Nested workflows are good for looping behaviors, multi-phase processes, and sub-workflows with their own planning.
 
 As most of the documentation covers GOAP, this section discusses the alternative planners and nested workflows.
@@ -346,3 +347,108 @@ fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
     return if (assessment.accepted) Done(...) else Revising(...)
 }
 ----
+
+[[reference.planners__actionclass]]
+===== ActionClass: Simplified Nesting for Utility AI
+
+When using the Utility planner, you can use a simpler nesting pattern with `ActionClass`.
+Unlike `Workflow<O>`, `ActionClass` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
+
+[source,kotlin]
+----
+interface ActionClass  // <1>
+----
+
+<1> Marker interface with no methods - classes just need to implement it and have `@Action` methods
+
+====== When to Use ActionClass vs Workflow
+
+[cols="1,2,2",options="header"]
+|===
+|Interface |Use When |Planner Support
+
+|`Workflow<O>`
+|You need GOAP planning in the nested flow, or want to declare the output type
+|GOAP and Utility
+
+|`ActionClass`
+|Using Utility AI and don't need to specify output type
+|Utility only
+|===
+
+IMPORTANT: `ActionClass` nesting only works with the Utility planner.
+If you try to return an `ActionClass` from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
+
+====== Example: ActionClass with Utility AI
+
+[source,kotlin]
+----
+// Simple ActionClass - no output type needed
+class ProcessingPhase(val data: String) : ActionClass {  // <1>
+
+    @Action
+    @AchievesGoal(description = "Process data")  // <2>
+    fun process(): ProcessedData {
+        return ProcessedData(data.uppercase())
+    }
+}
+
+@Agent(description = "Utility agent with ActionClass", planner = PlannerType.UTILITY)
+class DataProcessor {
+
+    @Action
+    fun startProcessing(input: UserInput): ProcessingPhase {  // <3>
+        return ProcessingPhase(input.content)
+    }
+}
+----
+
+<1> `ActionClass` is simpler than `Workflow<O>` - no `outputType` property needed
+<2> Still use `@AchievesGoal` to mark terminal actions
+<3> Returning an `ActionClass` from an action enters it as a nested agent (Utility AI only)
+
+====== ActionClass Chaining
+
+ActionClass instances can return other ActionClass instances, enabling multi-phase processing:
+
+[source,kotlin]
+----
+class ValidationPhase(val data: String) : ActionClass {
+
+    @Action
+    @AchievesGoal(description = "Validate and proceed")
+    fun validate(): ProcessingPhase {  // <1>
+        // Validation logic...
+        return ProcessingPhase(data)
+    }
+}
+
+class ProcessingPhase(val data: String) : ActionClass {
+
+    @Action
+    @AchievesGoal(description = "Process complete")
+    fun process(): Result {
+        return Result(data.processed())
+    }
+}
+----
+
+<1> Returning another `ActionClass` chains to the next phase
+
+====== Dual Interface Classes
+
+A class can implement both `ActionClass` and `Workflow<O>`.
+In this case, it works with both planners - `Workflow<O>` behavior takes precedence:
+
+[source,kotlin]
+----
+class DualPhase(val data: String) : ActionClass, Workflow<Result> {
+    override val outputType = Result::class.java  // <1>
+
+    @Action
+    @AchievesGoal(description = "Process")
+    fun process(): Result = Result(data)
+}
+----
+
+<1> When both interfaces are implemented, the class works with both GOAP and Utility planners
