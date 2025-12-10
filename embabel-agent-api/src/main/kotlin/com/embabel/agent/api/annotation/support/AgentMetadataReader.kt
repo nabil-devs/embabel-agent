@@ -23,7 +23,6 @@ import com.embabel.agent.api.common.OperationContext
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
-import com.embabel.agent.api.common.subflow.Flow
 import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
@@ -73,24 +72,40 @@ internal data class AgenticInfo(
     val agentAnnotation: Agent? = targetType.getAnnotation(Agent::class.java)
 
     /**
-     * Does this type implement Workflow interface?
+     * Does this type implement FlowReturning interface?
      */
     val isFlowReturning: Boolean = FlowReturning::class.java.isAssignableFrom(targetType)
 
     /**
-     * Does this type implement Flow interface?
-     * Flow is a simpler marker for classes with @Action methods that don't need
-     * a specified output type (used with Utility AI planner).
+     * Does this type have the @Subflow annotation (directly or as meta-annotation)?
+     * This includes classes annotated with @Agent (which is meta-annotated with @Subflow).
      */
-    val isFlow: Boolean = Flow::class.java.isAssignableFrom(targetType)
+    val isSubflow: Boolean = hasSubflowAnnotation(targetType)
+
+    /**
+     * Does this type have the @Subflow annotation directly (not via meta-annotation)?
+     * Used to identify standalone subflow classes that need NIRVANA goal.
+     */
+    val isDirectSubflow: Boolean = targetType.isAnnotationPresent(Subflow::class.java)
+
+    private fun hasSubflowAnnotation(clazz: Class<*>): Boolean {
+        // Check for direct @Subflow annotation
+        if (clazz.isAnnotationPresent(Subflow::class.java)) {
+            return true
+        }
+        // Check for meta-annotation (e.g., @Agent is annotated with @Subflow)
+        return clazz.annotations.any { annotation ->
+            annotation.annotationClass.java.isAnnotationPresent(Subflow::class.java)
+        }
+    }
 
     fun isAgent(): Boolean = agentAnnotation != null
 
     /**
      * Is this type agentic at all?
-     * True if it has @EmbabelComponent, @Agent, implements Workflow interface, or implements Flow interface.
+     * True if it has @EmbabelComponent, @Agent, @Subflow, or implements FlowReturning interface.
      */
-    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isFlowReturning || isFlow
+    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isFlowReturning || isSubflow
 
     fun validationErrors(): Collection<String> {
         val errors = mutableListOf<String>()
@@ -215,9 +230,11 @@ class AgentMetadataReader(
                     )
                 )
             }
-            // For Flow implementations (without @Agent annotation), add NIRVANA goal
-            // since Flow is meant to be used with Utility AI which needs NIRVANA
-            if (agenticInfo.isFlow && !agenticInfo.isFlowReturning && agenticInfo.agentAnnotation == null) {
+            // For standalone @Subflow classes (direct annotation, not @Agent, not @EmbabelComponent, not FlowReturning), add NIRVANA goal
+            // since @Subflow is meant to be used with Utility AI which needs NIRVANA
+            if (agenticInfo.isDirectSubflow && !agenticInfo.isFlowReturning &&
+                agenticInfo.agentAnnotation == null && agenticInfo.embabelComponentAnnotation == null
+            ) {
                 add(NIRVANA)
             }
         }

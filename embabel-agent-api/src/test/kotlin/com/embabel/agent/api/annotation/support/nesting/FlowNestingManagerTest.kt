@@ -18,9 +18,9 @@ package com.embabel.agent.api.annotation.support.nesting
 import com.embabel.agent.api.annotation.AchievesGoal
 import com.embabel.agent.api.annotation.Action
 import com.embabel.agent.api.annotation.Agent
+import com.embabel.agent.api.annotation.Subflow
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
-import com.embabel.agent.api.common.subflow.Flow
 import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.core.AgentProcessStatusCode
@@ -36,10 +36,10 @@ import com.embabel.agent.core.Agent as CoreAgent
 data class ProcessedData(val content: String)
 
 /**
- * Tests for Flow pattern where classes implementing Flow can be
+ * Tests for @Subflow pattern where classes annotated with @Subflow can be
  * returned from actions when using Utility AI planner.
  *
- * Unlike Workflow<O>, Flow doesn't require specifying an output type,
+ * Unlike FlowReturning<O>, @Subflow doesn't require specifying an output type,
  * which is suitable for Utility AI where goal-oriented planning isn't needed.
  */
 class FlowNestingManagerTest {
@@ -48,48 +48,56 @@ class FlowNestingManagerTest {
     private val reader = AgentMetadataReader()
 
     @Nested
-    inner class FlowDetection {
+    inner class SubflowDetection {
 
         @Test
-        fun `plain data class is not an Flow`() {
-            assertFalse(runner.isFlow(ProcessedData("test")))
+        fun `plain data class is not a @Subflow`() {
+            assertFalse(runner.isSubflow(ProcessedData("test")))
         }
 
         @Test
-        fun `class implementing Flow with @Action methods is detected`() {
-            val Flow = SimpleFlow("data")
-            assertTrue(runner.isFlow(Flow))
+        fun `class with @Subflow annotation and @Action methods is detected`() {
+            val scope = SimpleSubflow("data")
+            assertTrue(runner.isSubflow(scope))
         }
 
         @Test
-        fun `Flow without @Action methods is not runnable`() {
-            val Flow = EmptyFlow()
-            assertFalse(runner.isFlow(Flow))
+        fun `@Subflow without @Action methods is not runnable`() {
+            val scope = EmptySubflow()
+            assertFalse(runner.isSubflow(scope))
         }
 
         @Test
-        fun `Workflow is not detected as Flow`() {
+        fun `FlowReturning is not detected as @Subflow only`() {
             val workflow = SimpleFlowReturning("test")
-            assertFalse(runner.isFlow(workflow))
+            // FlowReturning is detected separately, not through @Subflow
+            assertFalse(runner.isSubflow(workflow))
+            assertTrue(runner.isFlowReturning(workflow))
         }
 
         @Test
-        fun `Flow is not detected as Workflow`() {
-            val Flow = SimpleFlow("test")
-            assertFalse(runner.isFlowReturning(Flow))
+        fun `@Subflow is not detected as FlowReturning`() {
+            val scope = SimpleSubflow("test")
+            assertFalse(runner.isFlowReturning(scope))
         }
 
         @Test
-        fun `nested Flow inside agent is detected`() {
-            val processingFlow = UtilityAgentWithNestedTransitions.ProcessingFlow("test")
+        fun `nested @Subflow inside agent is detected`() {
+            val processingScope = UtilityAgentWithNestedTransitions.ProcessingSubflow("test")
             assertTrue(
-                runner.isFlow(processingFlow),
-                "ProcessingFlow should be detected as Flow"
+                runner.isSubflow(processingScope),
+                "ProcessingSubflow should be detected as @Subflow"
             )
             assertTrue(
-                runner.isRunnableNestedAgent(processingFlow, PlannerType.UTILITY),
-                "ProcessingFlow should be runnable with UTILITY planner"
+                runner.isRunnableNestedAgent(processingScope, PlannerType.UTILITY),
+                "ProcessingSubflow should be runnable with UTILITY planner"
             )
+        }
+
+        @Test
+        fun `@Agent class is detected as @Subflow (via meta-annotation)`() {
+            val agent = NestedAgentProcessor()
+            assertTrue(runner.isSubflow(agent), "@Agent should be detected as @Subflow")
         }
     }
 
@@ -97,27 +105,27 @@ class FlowNestingManagerTest {
     inner class RunnableNestedAgentDetection {
 
         @Test
-        fun `Workflow is runnable with GOAP planner`() {
+        fun `FlowReturning is runnable with GOAP planner`() {
             val workflow = SimpleFlowReturning("test")
             assertTrue(runner.isRunnableNestedAgent(workflow, PlannerType.GOAP))
         }
 
         @Test
-        fun `Workflow is runnable with UTILITY planner`() {
+        fun `FlowReturning is runnable with UTILITY planner`() {
             val workflow = SimpleFlowReturning("test")
             assertTrue(runner.isRunnableNestedAgent(workflow, PlannerType.UTILITY))
         }
 
         @Test
-        fun `Flow is NOT runnable with GOAP planner`() {
-            val Flow = SimpleFlow("test")
-            assertFalse(runner.isRunnableNestedAgent(Flow, PlannerType.GOAP))
+        fun `@Subflow is NOT runnable with GOAP planner`() {
+            val scope = SimpleSubflow("test")
+            assertFalse(runner.isRunnableNestedAgent(scope, PlannerType.GOAP))
         }
 
         @Test
-        fun `Flow IS runnable with UTILITY planner`() {
-            val Flow = SimpleFlow("test")
-            assertTrue(runner.isRunnableNestedAgent(Flow, PlannerType.UTILITY))
+        fun `@Subflow IS runnable with UTILITY planner`() {
+            val scope = SimpleSubflow("test")
+            assertTrue(runner.isRunnableNestedAgent(scope, PlannerType.UTILITY))
         }
 
         @Test
@@ -132,28 +140,28 @@ class FlowNestingManagerTest {
     inner class AgentMetadataCreation {
 
         @Test
-        fun `can create agent metadata from Flow`() {
-            val Flow = SimpleFlow("test")
-            val metadata = reader.createAgentMetadata(Flow)
+        fun `can create agent metadata from @Subflow`() {
+            val scope = SimpleSubflow("test")
+            val metadata = reader.createAgentMetadata(scope)
             assertNotNull(metadata)
             assertEquals(1, metadata!!.actions.size)
         }
 
         @Test
-        fun `Flow should have NIRVANA goal automatically`() {
-            // Flow implementations without @Agent get NIRVANA goal automatically
+        fun `@Subflow should have NIRVANA goal automatically`() {
+            // @Subflow classes without @Agent get NIRVANA goal automatically
             // since they're meant for Utility AI
-            val Flow = SimpleFlow("test")
-            val metadata = reader.createAgentMetadata(Flow)
+            val scope = SimpleSubflow("test")
+            val metadata = reader.createAgentMetadata(scope)
             assertNotNull(metadata)
-            // Flow won't have workflow_output goal since it doesn't define an output type
+            // @Subflow won't have workflow_output goal since it doesn't define an output type
             assertFalse(metadata!!.goals.any { it.name.contains("workflow_output") })
             // But it SHOULD have NIRVANA goal
-            assertTrue(metadata.goals.any { it.name == "Nirvana" }, "Flow should have NIRVANA goal")
+            assertTrue(metadata.goals.any { it.name == "Nirvana" }, "@Subflow should have NIRVANA goal")
             // And it should also have the @AchievesGoal goal
             assertTrue(
                 metadata.goals.any { it.name.contains("process") },
-                "Flow should have @AchievesGoal-created goal: ${metadata.goals.map { it.name }}"
+                "@Subflow should have @AchievesGoal-created goal: ${metadata.goals.map { it.name }}"
             )
         }
 
@@ -168,10 +176,10 @@ class FlowNestingManagerTest {
     inner class UtilityAgentExecution {
 
         @Test
-        fun `SimpleFlow runs directly with Utility planner`() {
-            // First test that SimpleFlow can run as a standalone agent
-            val Flow = SimpleFlow("test input")
-            val metadata = reader.createAgentMetadata(Flow)
+        fun `SimpleSubflow runs directly with Utility planner`() {
+            // First test that SimpleSubflow can run as a standalone agent
+            val scope = SimpleSubflow("test input")
+            val metadata = reader.createAgentMetadata(scope)
             assertNotNull(metadata)
 
             val ap = IntegrationTestUtils.dummyAgentPlatform()
@@ -179,7 +187,7 @@ class FlowNestingManagerTest {
                 metadata!!.createAgent(
                     name = metadata.name,
                     provider = "test",
-                    description = "Test SimpleFlow"
+                    description = "Test SimpleSubflow"
                 ),
                 ProcessOptions().withPlannerType(PlannerType.UTILITY),
                 emptyMap()
@@ -187,7 +195,7 @@ class FlowNestingManagerTest {
 
             assertEquals(
                 AgentProcessStatusCode.COMPLETED, agentProcess.status,
-                "SimpleFlow should complete, but got: ${agentProcess.status}"
+                "SimpleSubflow should complete, but got: ${agentProcess.status}"
             )
             val result = agentProcess.lastResult()
             assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
@@ -195,8 +203,8 @@ class FlowNestingManagerTest {
         }
 
         @Test
-        fun `agent returning Flow executes action and enters nested flow`() {
-            val agent = UtilityAgentWithFlow()
+        fun `agent returning @Subflow executes action and enters nested scope`() {
+            val agent = UtilityAgentWithSubflow()
             val metadata = reader.createAgentMetadata(agent)
             assertNotNull(metadata)
 
@@ -208,14 +216,14 @@ class FlowNestingManagerTest {
             )
 
             // The outer agent should complete (either by achieving a goal or running out of actions)
-            // The important thing is that the Flow was run and produced a result
+            // The important thing is that the @Subflow was run and produced a result
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                    agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
-            // Check that the Flow's result is on the blackboard
+            // Check that the @Subflow's result is on the blackboard
             val result = agentProcess.lastResult()
             assertTrue(
                 result is ProcessedData,
@@ -225,10 +233,10 @@ class FlowNestingManagerTest {
         }
 
         @Test
-        fun `agent with multiple Flow actions works with Utility planner`() {
-            // Test that the parent agent's action can return an Flow which runs
+        fun `agent with multiple @Subflow actions works with Utility planner`() {
+            // Test that the parent agent's action can return a @Subflow which runs
             // and produces results that end up on the blackboard
-            val agent = UtilityAgentWithFlow()
+            val agent = UtilityAgentWithSubflow()
             val metadata = reader.createAgentMetadata(agent)
             assertNotNull(metadata)
 
@@ -242,11 +250,11 @@ class FlowNestingManagerTest {
             // The outer agent may be STUCK (no more actions) or COMPLETED
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                    agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
-            // Check that the nested Flow result is on the blackboard
+            // Check that the nested @Subflow result is on the blackboard
             val result = agentProcess.lastResult()
             assertTrue(
                 result is ProcessedData,
@@ -257,27 +265,18 @@ class FlowNestingManagerTest {
     }
 
     @Nested
-    inner class FlowVsFlowReturningComparison {
+    inner class SubflowVsFlowReturningComparison {
 
         @Test
-        fun `Flow and Workflow are distinct interfaces`() {
-            val Flow = SimpleFlow("test")
+        fun `@Subflow and FlowReturning are distinct`() {
+            val scope = SimpleSubflow("test")
             val workflow = SimpleFlowReturning("test")
 
-            assertTrue(Flow is Flow)
-            assertFalse(Flow is FlowReturning<*>)
+            assertTrue(runner.isSubflow(scope))
+            assertFalse(scope is FlowReturning<*>)
 
             assertTrue(workflow is FlowReturning<*>)
-            assertFalse(workflow is Flow)
-        }
-
-        @Test
-        fun `class can implement both Flow and Workflow`() {
-            val dual = DualInterfaceClass("test")
-            assertTrue(dual is Flow)
-            assertTrue(dual is FlowReturning<*>)
-            assertTrue(runner.isFlowReturning(dual))
-            assertTrue(runner.isFlow(dual))
+            assertFalse(runner.isSubflow(workflow))
         }
     }
 
@@ -286,32 +285,25 @@ class FlowNestingManagerTest {
 
         @Test
         fun `plain data class is not an @Agent class`() {
-            assertFalse(runner.isAgentClass(ProcessedData("test")))
+            assertFalse(runner.isSubflow(ProcessedData("test")))
         }
 
         @Test
-        fun `class with @Agent annotation and @Action methods is detected`() {
+        fun `class with @Agent annotation and @Action methods is detected as @Subflow`() {
             val agent = NestedAgentProcessor()
-            assertTrue(runner.isAgentClass(agent))
+            assertTrue(runner.isSubflow(agent))
         }
 
         @Test
         fun `@Agent class without @Action methods is not runnable`() {
             val agent = EmptyAgentClass()
-            assertFalse(runner.isAgentClass(agent))
+            assertFalse(runner.isSubflow(agent))
         }
 
         @Test
-        fun `@Agent class is not detected as Flow or FlowReturning`() {
+        fun `@Agent class is not detected as FlowReturning`() {
             val agent = NestedAgentProcessor()
-            assertFalse(runner.isFlow(agent))
             assertFalse(runner.isFlowReturning(agent))
-        }
-
-        @Test
-        fun `Flow is not detected as @Agent class`() {
-            val flow = SimpleFlow("test")
-            assertFalse(runner.isAgentClass(flow))
         }
     }
 
@@ -349,7 +341,7 @@ class FlowNestingManagerTest {
 
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                    agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
@@ -362,8 +354,8 @@ class FlowNestingManagerTest {
         }
 
         @Test
-        fun `@Agent class can chain to Flow`() {
-            val agent = AgentThatReturnsFlow()
+        fun `@Agent class can chain to @Subflow`() {
+            val agent = AgentThatReturnsSubflow()
             val metadata = reader.createAgentMetadata(agent)
             assertNotNull(metadata)
 
@@ -376,7 +368,7 @@ class FlowNestingManagerTest {
 
             assertTrue(
                 agentProcess.status == AgentProcessStatusCode.COMPLETED ||
-                        agentProcess.status == AgentProcessStatusCode.STUCK,
+                    agentProcess.status == AgentProcessStatusCode.STUCK,
                 "Agent should at least have run, but status was: ${agentProcess.status}"
             )
 
@@ -413,70 +405,65 @@ class UtilityAgentWithNestedAgent {
     }
 }
 
-// @Agent class that returns a Flow
-@Agent(description = "Agent that returns Flow", planner = PlannerType.UTILITY)
-class AgentThatReturnsFlow {
+// @Agent class that returns a @Subflow
+@Agent(description = "Agent that returns @Subflow", planner = PlannerType.UTILITY)
+class AgentThatReturnsSubflow {
 
     @Action
-    fun delegateToFlow(it: UserInput): SimpleFlow {
-        return SimpleFlow(it.content)
+    fun delegateToScope(it: UserInput): SimpleSubflow {
+        return SimpleSubflow(it.content)
     }
 }
 
-// Empty Flow - no @Action methods, should not be runnable
-class EmptyFlow : Flow
+// Empty @Subflow - no @Action methods, should not be runnable
+@Subflow
+class EmptySubflow
 
-// Simple Flow with one action
-class SimpleFlow(val data: String) : Flow {
+// Simple @Subflow with one action
+@Subflow
+class SimpleSubflow(val data: String) {
 
     @Action
     @AchievesGoal(description = "Process data")
     fun process(): ProcessedData = ProcessedData("processed: $data")
 }
 
-// Flow for a second phase
-class FinalizingFlow(val data: ProcessedData) : Flow {
+// @Subflow for a second phase
+@Subflow
+class FinalizingSubflow(val data: ProcessedData) {
 
     @Action
     @AchievesGoal(description = "Finalize data")
     fun finalize(): ProcessedData = ProcessedData("${data.content} - finalized")
 }
 
-// Class implementing both Flow and Workflow
-class DualInterfaceClass(val data: String) : Flow, FlowReturning<ProcessedData> {
-    override val outputType = ProcessedData::class.java
+// Utility AI agent that returns a @Subflow
+@Agent(description = "Utility agent with @Subflow", planner = PlannerType.UTILITY)
+class UtilityAgentWithSubflow {
 
     @Action
-    @AchievesGoal(description = "Process dual")
-    fun process(): ProcessedData = ProcessedData("dual: $data")
-}
-
-// Utility AI agent that returns an Flow
-@Agent(description = "Utility agent with Flow", planner = PlannerType.UTILITY)
-class UtilityAgentWithFlow {
-
-    @Action
-    fun enterFlow(it: UserInput): SimpleFlow {
-        return SimpleFlow(it.content)
+    fun enterScope(it: UserInput): SimpleSubflow {
+        return SimpleSubflow(it.content)
     }
 }
 
-// Utility AI agent with nested Flow transitions
+// Utility AI agent with nested @Subflow transitions
 @Agent(description = "Utility agent with nested transitions", planner = PlannerType.UTILITY)
 class UtilityAgentWithNestedTransitions {
 
     @Action
-    fun startProcessing(it: UserInput): ProcessingFlow {
-        return ProcessingFlow(it.content)
+    fun startProcessing(it: UserInput): ProcessingSubflow {
+        return ProcessingSubflow(it.content)
     }
 
-    class ProcessingFlow(val content: String) : Flow {
+    @Subflow
+    class ProcessingSubflow(val content: String) {
 
         @Action
         @AchievesGoal(description = "Process and pass to finalizing")
-        fun process(): FinalizingFlow {
+        fun process(): FinalizingSubflow {
             val data = ProcessedData("processing: $content")
-            return FinalizingFlow(data)
+            return FinalizingSubflow(data)
         }
     }
 }

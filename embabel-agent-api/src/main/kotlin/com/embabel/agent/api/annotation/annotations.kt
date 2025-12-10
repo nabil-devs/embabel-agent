@@ -36,9 +36,44 @@ import org.springframework.stereotype.Component
     AnnotationTarget.CLASS,
 )
 @Component
+@Subflow
 annotation class EmbabelComponent(
     val scan: Boolean = true,
 )
+
+/**
+ * Indicates that this class contains @Action methods and can be run as a nested subflow.
+ * This is the base marker for classes that can be used as subflows in Utility AI planning.
+ *
+ * Use this annotation directly when:
+ * - Using Utility AI planner (which doesn't require goal-oriented planning)
+ * - You want to return an action-containing class from an action
+ * - You don't need Spring component scanning (non-bean instances)
+ *
+ * For Spring-managed agents, use [@Agent] which is meta-annotated with @Subflow.
+ * For GOAP planning where you need a known output type, use [com.embabel.agent.api.common.subflow.FlowReturning] instead.
+ *
+ * Example:
+ * ```kotlin
+ * @Subflow
+ * class ProcessingPhase(val data: String) {
+ *     @Action
+ *     @AchievesGoal(description = "Process data")
+ *     fun processData(): Result {
+ *         return Result(data.uppercase())
+ *     }
+ * }
+ * ```
+ *
+ * @see Agent for Spring-managed agents
+ * @see com.embabel.agent.api.common.subflow.FlowReturning for goal-oriented workflows with known output types
+ */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(
+    AnnotationTarget.CLASS,
+    AnnotationTarget.ANNOTATION_CLASS,
+)
+annotation class Subflow
 
 /**
  * Indicates that this class is an agent.
@@ -62,6 +97,7 @@ annotation class EmbabelComponent(
     AnnotationTarget.CLASS,
 )
 @Component
+@Subflow
 annotation class Agent(
     val name: String = "",
     val provider: String = "",

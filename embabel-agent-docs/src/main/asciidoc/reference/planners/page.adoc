@@ -22,7 +22,7 @@ The planning strategies currently supported out of the box are:
 |===
 
 TIP: Both planners support *nested workflows*--any action can return a `Workflow<O>` class to enter a nested flow.
-Utility AI also supports the simpler `Flow` interface and `@Agent`-annotated classes for nesting without specifying output types.
+Utility AI also supports the `@Subflow` annotation and `@Agent`-annotated classes for nesting without specifying output types.
 Nested workflows are good for looping behaviors, multi-phase processes, and sub-workflows with their own planning.
 
 As most of the documentation covers GOAP, this section discusses the alternative planners and nested workflows.
@@ -348,20 +348,23 @@ fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
 }
 ----
 
-[[reference.planners__Flow]]
-===== Flow: Simplified Nesting for Utility AI
+[[reference.planners__subflow]]
+===== @Subflow: Simplified Nesting for Utility AI
 
-When using the Utility planner, you can use a simpler nesting pattern with `Flow`.
-Unlike `FlowReturning<O>`, `Flow` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
+When using the Utility planner, you can use a simpler nesting pattern with the `@Subflow` annotation.
+Unlike `FlowReturning<O>`, `@Subflow` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
 
 [source,kotlin]
 ----
-interface Flow  // <1>
+@Subflow  // <1>
+class ProcessingPhase(val data: String) {
+    // @Action methods go here
+}
 ----
 
-<1> Marker interface with no methods - classes just need to implement it and have `@Action` methods
+<1> Marker annotation - classes just need the annotation and `@Action` methods
 
-====== When to Use Flow vs Workflow vs @Agent
+====== When to Use @Subflow vs FlowReturning
 
 [cols="1,2,2",options="header"]
 |===
@@ -371,24 +374,27 @@ interface Flow  // <1>
 |You need GOAP planning in the nested flow, or want to declare the output type
 |GOAP and Utility
 
-|`Flow`
+|`@Subflow`
 |Using Utility AI and don't need to specify output type
 |Utility only
 
 |`@Agent` class
-|Composing existing agents or when you don't want to implement an interface
-|Utility only
+|Composing existing Spring-managed agents
+|Utility only (meta-annotated with @Subflow)
 |===
 
-IMPORTANT: `Flow` and `@Agent` class nesting only works with the Utility planner.
-If you try to return a `Flow` or `@Agent` instance from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
+IMPORTANT: `@Subflow` nesting only works with the Utility planner.
+If you try to return a `@Subflow` instance from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
 
-====== Example: Flow with Utility AI
+NOTE: The `@Agent` annotation is meta-annotated with `@Subflow`, so any `@Agent` class can also be used as a nested subflow with Utility AI.
+
+====== Example: @Subflow with Utility AI
 
 [source,kotlin]
 ----
-// Simple Flow - no output type needed
-class ProcessingPhase(val data: String) : Flow {  // <1>
+// Simple @Subflow - no output type needed
+@Subflow
+class ProcessingPhase(val data: String) {  // <1>
 
     @Action
     @AchievesGoal(description = "Process data")  // <2>
@@ -397,7 +403,7 @@ class ProcessingPhase(val data: String) : Flow {  // <1>
     }
 }
 
-@Agent(description = "Utility agent with Flow", planner = PlannerType.UTILITY)
+@Agent(description = "Utility agent with @Subflow", planner = PlannerType.UTILITY)
 class DataProcessor {
 
     @Action
@@ -407,17 +413,18 @@ class DataProcessor {
 }
 ----
 
-<1> `Flow` is simpler than `Workflow<O>` - no `outputType` property needed
+<1> `@Subflow` is simpler than `FlowReturning<O>` - no `outputType` property needed
 <2> Still use `@AchievesGoal` to mark terminal actions
-<3> Returning an `Flow` from an action enters it as a nested agent (Utility AI only)
+<3> Returning a `@Subflow` from an action enters it as a nested agent (Utility AI only)
 
-====== Flow Chaining
+====== @Subflow Chaining
 
-Flow instances can return other Flow instances, enabling multi-phase processing:
+@Subflow instances can return other @Subflow instances, enabling multi-phase processing:
 
 [source,kotlin]
 ----
-class ValidationPhase(val data: String) : Flow {
+@Subflow
+class ValidationPhase(val data: String) {
 
     @Action
     @AchievesGoal(description = "Validate and proceed")
@@ -427,7 +434,8 @@ class ValidationPhase(val data: String) : Flow {
     }
 }
 
-class ProcessingPhase(val data: String) : Flow {
+@Subflow
+class ProcessingPhase(val data: String) {
 
     @Action
     @AchievesGoal(description = "Process complete")
@@ -437,40 +445,22 @@ class ProcessingPhase(val data: String) : Flow {
 }
 ----
 
-<1> Returning another `Flow` chains to the next phase
-
-====== Dual Interface Classes
-
-A class can implement both `Flow` and `FlowReturning<O>`.
-In this case, it works with both planners - `FlowReturning<O>` behavior takes precedence:
-
-[source,kotlin]
-----
-class DualPhase(val data: String) : Flow, FlowReturning<Result> {
-    override val outputType = Result::class.java  // <1>
-
-    @Action
-    @AchievesGoal(description = "Process")
-    fun process(): Result = Result(data)
-}
-----
-
-<1> When both interfaces are implemented, the class works with both GOAP and Utility planners
+<1> Returning another `@Subflow` chains to the next phase
 
 [[reference.planners__nested_agents]]
 ===== @Agent Classes as Nested Agents
 
-When using the Utility planner, you can also return instances of `@Agent`-annotated classes from actions.
+Since `@Agent` is meta-annotated with `@Subflow`, any `@Agent` class can be returned from actions when using Utility AI.
 This enables injecting agents as dependencies and delegating work to them.
 
 [source,kotlin]
 ----
 @Agent(description = "Text processor agent")
-class TextProcessorAgent(val text: String) {  // <1>
+class TextProcessorAgent {  // <1>
 
     @Action
     @AchievesGoal(description = "Process text")
-    fun process(): ProcessedText = ProcessedText(text.uppercase())
+    fun process(input: UserInput): ProcessedText = ProcessedText(input.content.uppercase())
 }
 
 @Agent(description = "Orchestrator agent", planner = PlannerType.UTILITY)
@@ -478,7 +468,7 @@ class OrchestratorAgent {
 
     @Action
     fun delegateProcessing(input: UserInput): TextProcessorAgent {  // <2>
-        return TextProcessorAgent(input.content)
+        return TextProcessorAgent()
     }
 }
 ----
@@ -486,28 +476,9 @@ class OrchestratorAgent {
 <1> The nested `@Agent` class has its own actions and goals
 <2> Returning an `@Agent` instance runs it as a nested agent (Utility AI only)
 
-====== When to Use @Agent Classes vs Flow
-
-[cols="1,2,2",options="header"]
-|===
-|Type |Use When |Notes
-
-|`FlowReturning<O>`
-|Need GOAP planning or explicit output type
-|Works with both planners
-
-|`Flow`
-|Simple nesting without output type
-|Utility only, requires implementing interface
-
-|`@Agent` class
-|Injecting/composing existing agents
-|Utility only, no interface needed
-|===
-
 ====== Chaining Nested Types
 
-Nested agents, Flows, and FlowReturning instances can chain to each other:
+Nested @Agent classes, @Subflow classes, and FlowReturning instances can chain to each other:
 
 [source,kotlin]
 ----
@@ -516,21 +487,22 @@ class MultiPhaseAgent {
 
     @Action
     fun startWithAgent(input: UserInput): ValidatorAgent {  // <1>
-        return ValidatorAgent(input.content)
+        return ValidatorAgent()
     }
 }
 
 @Agent(description = "Validator")
-class ValidatorAgent(val data: String) {
+class ValidatorAgent {
 
     @Action
     @AchievesGoal(description = "Validate and proceed")
-    fun validate(): ProcessingFlow {  // <2>
-        return ProcessingFlow(data)
+    fun validate(input: UserInput): ProcessingSubflow {  // <2>
+        return ProcessingSubflow(input.content)
     }
 }
 
-class ProcessingFlow(val data: String) : Flow {
+@Subflow
+class ProcessingSubflow(val data: String) {
 
     @Action
     @AchievesGoal(description = "Process complete")
@@ -539,7 +511,7 @@ class ProcessingFlow(val data: String) : Flow {
 ----
 
 <1> Start by delegating to an `@Agent` class
-<2> The `@Agent` can return a `Flow` to continue processing
+<2> The `@Agent` can return a `@Subflow` to continue processing
 
-IMPORTANT: `@Agent` class nesting only works with the Utility planner.
-If you try to return an `@Agent` instance when using GOAP, the raw object will be returned (not executed as a nested agent).
+IMPORTANT: `@Subflow` and `@Agent` class nesting only works with the Utility planner.
+If you try to return a `@Subflow` or `@Agent` instance when using GOAP, the raw object will be returned (not executed as a nested agent).
