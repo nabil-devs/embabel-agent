@@ -19,6 +19,7 @@ import com.embabel.agent.api.annotation.Agentic
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.subflow.FlowReturning
+import com.embabel.agent.core.Agent
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.AgentScope
 import com.embabel.agent.core.Goal
@@ -73,6 +74,14 @@ internal class FlowNestingManager(
     }
 
     /**
+     * Check if the given object is an AgentScope (programmatically created agent).
+     * AgentScope instances have goals and actions directly accessible.
+     */
+    fun isAgentScope(obj: Any): Boolean {
+        return obj is AgentScope && obj.actions.isNotEmpty()
+    }
+
+    /**
      * Check if a class has the @Agentic annotation (directly or as a meta-annotation on its annotations).
      * This includes @Agent, @Subflow, @EmbabelComponent, and any other annotation meta-annotated with @Agentic.
      */
@@ -98,9 +107,10 @@ internal class FlowNestingManager(
      * Check if the given object can be run as a nested agent based on the planner type.
      *
      * For GOAP planning: requires exactly one business goal (excluding NIRVANA) with an output type.
-     * For Utility AI planning: any @Agentic class with actions can be run.
+     * For Utility AI planning: any @Agentic class or AgentScope with actions can be run.
      *
      * FlowReturning instances are always runnable for backward compatibility.
+     * AgentScope instances (programmatically created agents) are also supported.
      */
     fun isRunnableNestedAgent(
         obj: Any,
@@ -108,6 +118,30 @@ internal class FlowNestingManager(
     ): Boolean {
         // FlowReturning is always runnable (backward compatibility)
         if (isFlowReturning(obj)) {
+            return true
+        }
+
+        // Check if it's an AgentScope (programmatically created agent)
+        if (isAgentScope(obj)) {
+            val agentScope = obj as AgentScope
+            val businessGoals = getBusinessGoals(agentScope)
+
+            // For Utility AI, any AgentScope with actions is runnable
+            if (plannerType == PlannerType.UTILITY) {
+                return true
+            }
+
+            // For GOAP, we need exactly one business goal to determine the output type
+            if (businessGoals.size != 1) {
+                logger.debug(
+                    "GOAP requires exactly 1 business goal for nested agent, but {} has {}: {}",
+                    obj::class.java.simpleName,
+                    businessGoals.size,
+                    businessGoals.map { it.name }
+                )
+                return false
+            }
+
             return true
         }
 
@@ -190,6 +224,7 @@ internal class FlowNestingManager(
 
     /**
      * Internal method to run any object with @Action methods as a nested agent.
+     * Handles both @Agentic-annotated classes and AgentScope instances.
      */
     private fun runNestedAgent(
         instance: Any,
@@ -210,19 +245,32 @@ internal class FlowNestingManager(
             )
         }
 
-        // Create agent metadata from the instance
-        val agentMetadata = agentMetadataReader.createAgentMetadata(instance)
-        if (agentMetadata == null) {
-            logger.warn("Could not create agent metadata from {}: {}", typeLabel, instanceClass.name)
-            return null
-        }
+        // Get or create the agent
+        val agent: Agent = when {
+            // If it's already an Agent, use it directly
+            instance is Agent -> instance
 
-        // Convert the scope to an agent
-        val agent = agentMetadata.createAgent(
-            name = agentMetadata.name,
-            provider = instanceClass.`package`?.name ?: "",
-            description = agentMetadata.description,
-        )
+            // If it's an AgentScope (but not Agent), create an Agent from it
+            instance is AgentScope -> instance.createAgent(
+                name = instance.name,
+                provider = instanceClass.`package`?.name ?: "",
+                description = instance.description,
+            )
+
+            // Otherwise, create agent metadata from the annotated class
+            else -> {
+                val agentMetadata = agentMetadataReader.createAgentMetadata(instance)
+                if (agentMetadata == null) {
+                    logger.warn("Could not create agent metadata from {}: {}", typeLabel, instanceClass.name)
+                    return null
+                }
+                agentMetadata.createAgent(
+                    name = agentMetadata.name,
+                    provider = instanceClass.`package`?.name ?: "",
+                    description = agentMetadata.description,
+                )
+            }
+        }
 
         logger.info(
             "Running nested {} agent: {} with {} actions",

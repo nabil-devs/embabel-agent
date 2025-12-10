@@ -23,7 +23,10 @@ import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.subflow.FlowReturning
 import com.embabel.agent.api.common.support.FlowNestingManager
+import com.embabel.agent.api.common.support.SupplierAction
 import com.embabel.agent.core.AgentProcessStatusCode
+import com.embabel.agent.core.AgentScope
+import com.embabel.agent.core.Goal
 import com.embabel.agent.core.ProcessOptions
 import com.embabel.agent.domain.io.UserInput
 import com.embabel.agent.test.integration.IntegrationTestUtils
@@ -449,6 +452,346 @@ class FlowNestingManagerTest {
             assertEquals("processed: goap-test", (result as ProcessedData).content)
         }
     }
+
+    /**
+     * Tests for programmatically created agents (via SimpleAgentBuilder or direct Agent construction)
+     * being returned from actions and run as nested agents.
+     *
+     * These tests verify that the same rules apply to programmatic agents as to @Agent/@Subflow classes:
+     * - GOAP: requires exactly one goal
+     * - Utility: works with any number of goals
+     *
+     * core.Agent and AgentScope implement the AgentScope interface which has goals and actions directly.
+     * FlowNestingManager detects these via isAgentScope() check without needing @Agentic annotation.
+     */
+    @Nested
+    inner class ProgrammaticAgentDetection {
+
+        @Test
+        fun `core Agent is not detected as FlowReturning`() {
+            val programmaticAgent = createSingleGoalAgent()
+            assertFalse(
+                runner.isFlowReturning(programmaticAgent),
+                "Core Agent does not implement FlowReturning"
+            )
+        }
+
+        @Test
+        fun `core Agent implements AgentScope which has goals and actions`() {
+            val programmaticAgent = createSingleGoalAgent()
+            // core.Agent implements AgentScope - it has goals and actions directly
+            assertTrue(programmaticAgent is AgentScope, "Core Agent should implement AgentScope")
+            assertEquals(1, programmaticAgent.goals.size, "Should have 1 goal")
+            assertEquals(1, programmaticAgent.actions.size, "Should have 1 action")
+        }
+
+        @Test
+        fun `AgentScope has goals and actions directly accessible`() {
+            val agentScope = createSingleGoalAgentScope()
+            assertTrue(agentScope is AgentScope, "Should be an AgentScope")
+            assertEquals(1, agentScope.goals.size, "Should have 1 goal")
+            assertEquals(1, agentScope.actions.size, "Should have 1 action")
+        }
+
+        @Test
+        fun `core Agent with single goal is runnable with GOAP`() {
+            val programmaticAgent = createSingleGoalAgent()
+            val isRunnable = runner.isRunnableNestedAgent(programmaticAgent, PlannerType.GOAP)
+            assertTrue(isRunnable, "AgentScope with single goal should be runnable with GOAP")
+        }
+
+        @Test
+        fun `core Agent with single goal is runnable with UTILITY`() {
+            val programmaticAgent = createSingleGoalAgent()
+            val isRunnable = runner.isRunnableNestedAgent(programmaticAgent, PlannerType.UTILITY)
+            assertTrue(isRunnable, "AgentScope should be runnable with UTILITY")
+        }
+
+        @Test
+        fun `AgentScope with single goal is runnable with GOAP`() {
+            val agentScope = createSingleGoalAgentScope()
+            val isRunnable = runner.isRunnableNestedAgent(agentScope, PlannerType.GOAP)
+            assertTrue(isRunnable, "AgentScope with single goal should be runnable with GOAP")
+        }
+
+        @Test
+        fun `AgentScope with single goal is runnable with UTILITY`() {
+            val agentScope = createSingleGoalAgentScope()
+            val isRunnable = runner.isRunnableNestedAgent(agentScope, PlannerType.UTILITY)
+            assertTrue(isRunnable, "AgentScope should be runnable with UTILITY")
+        }
+
+        @Test
+        fun `core Agent with multiple goals should NOT be runnable with GOAP`() {
+            val programmaticAgent = createMultiGoalAgent()
+            val isRunnable = runner.isRunnableNestedAgent(programmaticAgent, PlannerType.GOAP)
+            assertFalse(isRunnable, "Multiple goals should not be runnable with GOAP")
+        }
+
+        @Test
+        fun `core Agent with multiple goals is runnable with UTILITY`() {
+            val programmaticAgent = createMultiGoalAgent()
+            val isRunnable = runner.isRunnableNestedAgent(programmaticAgent, PlannerType.UTILITY)
+            assertTrue(isRunnable, "AgentScope with multiple goals should be runnable with UTILITY")
+        }
+    }
+
+    /**
+     * Tests for ProgrammaticWriteAndReviewAgent which uses high-level DSL builders
+     * (SimpleAgentBuilder, RepeatUntilBuilder) to create programmatic agents.
+     */
+    @Nested
+    inner class ProgrammaticWriteAndReviewAgentTests {
+
+        @Test
+        fun `SimpleProcessor creates valid single-goal AgentScope using SimpleAgentBuilder`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            assertTrue(processor is AgentScope)
+            assertEquals(1, processor.goals.size, "Should have single goal for GOAP compatibility")
+            assertEquals(1, processor.actions.size)
+        }
+
+        @Test
+        fun `SimpleProcessor is detected as AgentScope`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            assertTrue(runner.isAgentScope(processor), "Should be detected as AgentScope")
+        }
+
+        @Test
+        fun `SimpleProcessor with single goal is runnable with GOAP`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            assertTrue(
+                runner.isRunnableNestedAgent(processor, PlannerType.GOAP),
+                "Programmatic agent with single goal should be runnable with GOAP"
+            )
+        }
+
+        @Test
+        fun `SimpleProcessor is runnable with UTILITY`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            assertTrue(
+                runner.isRunnableNestedAgent(processor, PlannerType.UTILITY),
+                "Programmatic agent should be runnable with UTILITY"
+            )
+        }
+
+        @Test
+        fun `SimpleProcessor runs with GOAP planner`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+
+            val agentProcess = ap.runAgentFrom(
+                processor.createAgent(
+                    name = processor.name,
+                    provider = "test",
+                    description = processor.description,
+                ),
+                ProcessOptions().withPlannerType(PlannerType.GOAP),
+                mapOf("it" to UserInput("programmatic-goap-test"))
+            )
+
+            assertEquals(
+                AgentProcessStatusCode.COMPLETED, agentProcess.status,
+                "SimpleProcessor should complete with GOAP planner"
+            )
+            val result = agentProcess.lastResult()
+            assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
+            assertEquals("programmatically processed: programmatic-goap-test", (result as ProcessedData).content)
+        }
+
+        @Test
+        fun `SimpleProcessor runs with UTILITY planner`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessor()
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+
+            val agentProcess = ap.runAgentFrom(
+                processor.createAgent(
+                    name = processor.name,
+                    provider = "test",
+                    description = processor.description,
+                ),
+                ProcessOptions().withPlannerType(PlannerType.UTILITY),
+                mapOf("it" to UserInput("programmatic-utility-test"))
+            )
+
+            // UTILITY planner may COMPLETE or TERMINATE (when business goal is satisfied)
+            assertTrue(
+                agentProcess.status == AgentProcessStatusCode.COMPLETED ||
+                    agentProcess.status == AgentProcessStatusCode.TERMINATED,
+                "SimpleProcessor should complete or terminate with UTILITY planner, but was: ${agentProcess.status}"
+            )
+            val result = agentProcess.lastResult()
+            assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
+            assertEquals("programmatically processed: programmatic-utility-test", (result as ProcessedData).content)
+        }
+
+        @Test
+        fun `StoryWriter creates valid AgentScope using SimpleAgentBuilder`() {
+            val writer = ProgrammaticWriteAndReviewAgent.createStoryWriter()
+            assertTrue(writer is AgentScope)
+            assertEquals(1, writer.goals.size, "Should have single goal")
+            assertEquals(1, writer.actions.size)
+        }
+
+        @Test
+        fun `StoryWriter is runnable with GOAP`() {
+            val writer = ProgrammaticWriteAndReviewAgent.createStoryWriter()
+            assertTrue(
+                runner.isRunnableNestedAgent(writer, PlannerType.GOAP),
+                "Story writer should be runnable with GOAP"
+            )
+        }
+
+        @Test
+        fun `ReviewingAgent creates valid AgentScope using RepeatUntilBuilder`() {
+            val story = Story("Test story")
+            val reviewing = ProgrammaticWriteAndReviewAgent.createReviewingAgent(story)
+            assertTrue(reviewing is AgentScope)
+            assertTrue(reviewing.goals.isNotEmpty(), "Should have goals")
+            assertTrue(reviewing.actions.isNotEmpty(), "Should have actions")
+        }
+
+        @Test
+        fun `ReviewingAgent is runnable with UTILITY`() {
+            val story = Story("Test story")
+            val reviewing = ProgrammaticWriteAndReviewAgent.createReviewingAgent(story)
+            assertTrue(
+                runner.isRunnableNestedAgent(reviewing, PlannerType.UTILITY),
+                "Reviewing agent should be runnable with UTILITY"
+            )
+        }
+
+        @Test
+        fun `WriteAndReviewWorkflow creates valid AgentScope using RepeatUntilBuilder`() {
+            val workflow = ProgrammaticWriteAndReviewAgent.createWriteAndReviewWorkflow()
+            assertTrue(workflow is AgentScope)
+            assertTrue(workflow.goals.isNotEmpty(), "Should have goals")
+            assertTrue(workflow.actions.isNotEmpty(), "Should have actions")
+        }
+
+        @Test
+        fun `WriteAndReviewWorkflow is runnable with UTILITY`() {
+            val workflow = ProgrammaticWriteAndReviewAgent.createWriteAndReviewWorkflow()
+            assertTrue(
+                runner.isRunnableNestedAgent(workflow, PlannerType.UTILITY),
+                "Write and review workflow should be runnable with UTILITY"
+            )
+        }
+    }
+
+    /**
+     * Tests for Kotlin DSL (agent {}) created agents.
+     */
+    @Nested
+    inner class KotlinDslAgentTests {
+
+        @Test
+        fun `SimpleProcessorDsl creates valid Agent using Kotlin DSL`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            assertTrue(processor is AgentScope)
+            assertEquals("SimpleProcessorDsl", processor.name)
+            assertEquals(1, processor.goals.size, "Should have single goal")
+            assertEquals(1, processor.actions.size, "Should have single action")
+        }
+
+        @Test
+        fun `SimpleProcessorDsl is detected as AgentScope`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            assertTrue(runner.isAgentScope(processor), "DSL agent should be detected as AgentScope")
+        }
+
+        @Test
+        fun `SimpleProcessorDsl with single goal is runnable with GOAP`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            assertTrue(
+                runner.isRunnableNestedAgent(processor, PlannerType.GOAP),
+                "DSL agent with single goal should be runnable with GOAP"
+            )
+        }
+
+        @Test
+        fun `SimpleProcessorDsl is runnable with UTILITY`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            assertTrue(
+                runner.isRunnableNestedAgent(processor, PlannerType.UTILITY),
+                "DSL agent should be runnable with UTILITY"
+            )
+        }
+
+        @Test
+        fun `SimpleProcessorDsl runs with GOAP planner`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+
+            val agentProcess = ap.runAgentFrom(
+                processor,
+                ProcessOptions().withPlannerType(PlannerType.GOAP),
+                mapOf("it" to UserInput("dsl-goap-test"))
+            )
+
+            assertEquals(
+                AgentProcessStatusCode.COMPLETED, agentProcess.status,
+                "DSL processor should complete with GOAP planner"
+            )
+            val result = agentProcess.lastResult()
+            assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
+            assertEquals("dsl processed: dsl-goap-test", (result as ProcessedData).content)
+        }
+
+        @Test
+        fun `SimpleProcessorDsl runs with UTILITY planner`() {
+            val processor = ProgrammaticWriteAndReviewAgent.createSimpleProcessorWithDsl()
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+
+            val agentProcess = ap.runAgentFrom(
+                processor,
+                ProcessOptions().withPlannerType(PlannerType.UTILITY),
+                mapOf("it" to UserInput("dsl-utility-test"))
+            )
+
+            assertEquals(
+                AgentProcessStatusCode.COMPLETED, agentProcess.status,
+                "DSL processor should complete with UTILITY planner"
+            )
+            val result = agentProcess.lastResult()
+            assertTrue(result is ProcessedData, "Expected ProcessedData but got $result")
+            assertEquals("dsl processed: dsl-utility-test", (result as ProcessedData).content)
+        }
+
+        @Test
+        fun `StoryWriterDsl creates valid Agent`() {
+            val writer = ProgrammaticWriteAndReviewAgent.createStoryWriterWithDsl()
+            assertEquals("StoryWriterDsl", writer.name)
+            assertEquals(1, writer.goals.size)
+            assertEquals(1, writer.actions.size)
+        }
+
+        @Test
+        fun `StoryWriterDsl is runnable with GOAP`() {
+            val writer = ProgrammaticWriteAndReviewAgent.createStoryWriterWithDsl()
+            assertTrue(
+                runner.isRunnableNestedAgent(writer, PlannerType.GOAP),
+                "DSL story writer should be runnable with GOAP"
+            )
+        }
+
+        @Test
+        fun `ReviewerDsl creates valid Agent`() {
+            val reviewer = ProgrammaticWriteAndReviewAgent.createReviewerWithDsl()
+            assertEquals("ReviewerDsl", reviewer.name)
+            assertEquals(1, reviewer.goals.size)
+            assertEquals(1, reviewer.actions.size)
+        }
+
+        @Test
+        fun `ReviewerDsl is runnable with GOAP`() {
+            val reviewer = ProgrammaticWriteAndReviewAgent.createReviewerWithDsl()
+            assertTrue(
+                runner.isRunnableNestedAgent(reviewer, PlannerType.GOAP),
+                "DSL reviewer should be runnable with GOAP"
+            )
+        }
+    }
 }
 
 // Empty @Agent class - no @Action methods, should not be runnable
@@ -572,4 +915,123 @@ class UtilityAgentWithNestedTransitions {
             return FinalizingSubflow(data)
         }
     }
+}
+
+// Helper functions to create programmatic agents for testing
+
+/**
+ * Creates a programmatic Agent (core.Agent) with a single goal.
+ * This should be runnable with both GOAP and Utility planners once implemented.
+ */
+fun createSingleGoalAgent(): CoreAgent {
+    val action = SupplierAction(
+        name = "generateProcessedData",
+        description = "Generates ProcessedData",
+        cost = { 0.0 },
+        value = { 0.0 },
+        canRerun = false,
+        pre = emptyList(),
+        outputClass = ProcessedData::class.java,
+        toolGroups = emptySet(),
+    ) {
+        ProcessedData("programmatic result")
+    }
+
+    val goal = Goal(
+        name = "ProcessedData",
+        description = "Goal to produce ProcessedData",
+        satisfiedBy = ProcessedData::class.java,
+    )
+
+    return CoreAgent(
+        name = "ProgrammaticSingleGoalAgent",
+        provider = "test",
+        description = "A programmatically created agent with a single goal",
+        actions = listOf(action),
+        goals = setOf(goal),
+    )
+}
+
+/**
+ * Creates a programmatic Agent (core.Agent) with multiple goals.
+ * This should only be runnable with Utility planner once implemented.
+ */
+fun createMultiGoalAgent(): CoreAgent {
+    val action1 = SupplierAction(
+        name = "generateProcessedData",
+        description = "Generates ProcessedData",
+        cost = { 0.0 },
+        value = { 0.0 },
+        canRerun = false,
+        pre = emptyList(),
+        outputClass = ProcessedData::class.java,
+        toolGroups = emptySet(),
+    ) {
+        ProcessedData("result 1")
+    }
+
+    val action2 = SupplierAction(
+        name = "generateAnotherData",
+        description = "Generates another ProcessedData",
+        cost = { 0.0 },
+        value = { 0.0 },
+        canRerun = false,
+        pre = emptyList(),
+        outputClass = ProcessedData::class.java,
+        toolGroups = emptySet(),
+    ) {
+        ProcessedData("result 2")
+    }
+
+    val goal1 = Goal(
+        name = "FirstGoal",
+        description = "First goal",
+        satisfiedBy = ProcessedData::class.java,
+    )
+
+    val goal2 = Goal(
+        name = "SecondGoal",
+        description = "Second goal",
+        satisfiedBy = ProcessedData::class.java,
+    )
+
+    return CoreAgent(
+        name = "ProgrammaticMultiGoalAgent",
+        provider = "test",
+        description = "A programmatically created agent with multiple goals",
+        actions = listOf(action1, action2),
+        goals = setOf(goal1, goal2),
+    )
+}
+
+/**
+ * Creates a programmatic AgentScope with a single goal.
+ * AgentScope is the interface that Agent implements.
+ */
+fun createSingleGoalAgentScope(): AgentScope {
+    val action = SupplierAction(
+        name = "generateProcessedData",
+        description = "Generates ProcessedData",
+        cost = { 0.0 },
+        value = { 0.0 },
+        canRerun = false,
+        pre = emptyList(),
+        outputClass = ProcessedData::class.java,
+        toolGroups = emptySet(),
+    ) {
+        ProcessedData("scope result")
+    }
+
+    val goal = Goal(
+        name = "ProcessedData",
+        description = "Goal to produce ProcessedData",
+        satisfiedBy = ProcessedData::class.java,
+    )
+
+    return AgentScope(
+        name = "ProgrammaticAgentScope",
+        description = "A programmatically created AgentScope",
+        actions = listOf(action),
+        goals = setOf(goal),
+    )
 }

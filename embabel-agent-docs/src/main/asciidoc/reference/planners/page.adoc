@@ -534,3 +534,250 @@ class ProcessingSubflow(val data: String) {
 
 IMPORTANT: For GOAP planning, nested `@Subflow` and `@Agent` classes must have exactly one business goal (via `@AchievesGoal`).
 Classes with multiple goals can only be nested when using the Utility planner, which doesn't need a predetermined output type.
+
+[[reference.planners__programmatic_agents]]
+===== Programmatic Agents as Nested Agents
+
+Programmatically created agents using `SimpleAgentBuilder`, `RepeatUntilBuilder`, or other DSL builders can be returned from actions and run as nested agents.
+This enables dynamic agent composition where the nested agent's structure is determined at runtime.
+
+The same rules apply to programmatic agents as to annotated classes:
+
+* *GOAP*: Requires exactly one goal to determine the output type
+* *Utility AI*: Works with any number of goals
+
+====== Using SimpleAgentBuilder
+
+`SimpleAgentBuilder` is the simplest way to create a programmatic agent:
+
+[source,kotlin]
+----
+// Create a simple processor using SimpleAgentBuilder
+fun createSimpleProcessor(): AgentScope {
+    return SimpleAgentBuilder<ProcessedData>()  // <1>
+        .consuming(UserInput::class.java)       // <2>
+        .running { ctx ->                       // <3>
+            ProcessedData("processed: ${ctx.input.content}")
+        }
+        .build()
+        .build()
+}
+
+// Agent that returns a programmatic agent
+@Agent(description = "Orchestrator")
+class Orchestrator {
+
+    @Action
+    @AchievesGoal(description = "Delegate to programmatic agent")
+    fun delegate(input: UserInput): AgentScope {  // <4>
+        return createSimpleProcessor()
+    }
+}
+----
+
+<1> Specify the result type
+<2> Specify the input type the agent consumes
+<3> Define the action logic
+<4> Returning an `AgentScope` from an action runs it as a nested agent
+
+====== Using RepeatUntilBuilder for Loops
+
+`RepeatUntilBuilder` creates agents with feedback loops:
+
+[source,kotlin]
+----
+// Create a write-and-review workflow with a feedback loop
+fun createWriteAndReviewWorkflow(): AgentScope {
+    return RepeatUntilBuilder
+        .returning(ReviewedStory::class.java)       // <1>
+        .consuming(UserInput::class.java)
+        .withMaxIterations(5)                       // <2>
+        .repeating { ctx ->                         // <3>
+            val story = Story("A story about: ${ctx.input.content} (iteration ${ctx.iteration})")
+            val feedback = HumanFeedback(
+                approved = ctx.iteration >= 2,
+                comments = if (ctx.iteration >= 2) "Excellent!" else "Keep improving"
+            )
+            ReviewedStory(story, feedback)
+        }
+        .until { ctx ->                             // <4>
+            ctx.lastResult?.feedback?.approved == true
+        }
+        .build()
+        .build()
+}
+----
+
+<1> Specify the result type for the loop
+<2> Set maximum iterations to prevent infinite loops
+<3> Define the task that runs on each iteration
+<4> Define the acceptance criteria - loop ends when this returns `true`
+
+====== Programmatic Agent Detection
+
+The `FlowNestingManager` detects programmatic agents via the `AgentScope` interface:
+
+[cols="1,2,2",options="header"]
+|===
+|Type |GOAP Support |Utility Support
+
+|`AgentScope` with single goal
+|Yes - output type inferred from goal
+|Yes
+
+|`AgentScope` with multiple goals
+|No - ambiguous output type
+|Yes
+
+|`core.Agent` (implements `AgentScope`)
+|Same rules as `AgentScope`
+|Same rules as `AgentScope`
+|===
+
+====== Using the Kotlin DSL
+
+The most idiomatic Kotlin approach uses the `agent {}` DSL, which provides a clean, type-safe way to define agents:
+
+[source,kotlin]
+----
+import com.embabel.agent.api.dsl.agent
+
+// Create an agent using the Kotlin DSL
+fun createProcessorWithDsl(): Agent {
+    return agent(
+        name = "ProcessorAgent",
+        description = "Process data using Kotlin DSL",
+    ) {
+        transformation<UserInput, ProcessedData>(  // <1>
+            name = "process",
+            description = "Process user input",
+        ) {
+            ProcessedData("processed: ${it.input.content}")
+        }
+
+        goal(                                      // <2>
+            name = "ProcessedData",
+            description = "Data has been processed",
+            satisfiedBy = ProcessedData::class,
+        )
+    }
+}
+----
+
+<1> Define actions with `transformation<Input, Output>` using reified generics
+<2> Define goals with the `goal()` function
+
+The Kotlin DSL provides type-safe, concise agent definitions that integrate naturally with Kotlin codebases.
+
+====== Multi-Action Agents with the Kotlin DSL
+
+The DSL supports multiple actions, conditions, and goals:
+
+[source,kotlin]
+----
+fun createMultiActionAgent(): Agent {
+    return agent(
+        name = "MultiStepProcessor",
+        description = "Process data in multiple steps",
+    ) {
+        // First transformation: UserInput -> Story
+        transformation<UserInput, Story>(
+            name = "writeStory",
+            description = "Write a story from user input",
+        ) {
+            Story("A story about: ${it.input.content}")
+        }
+
+        // Second transformation: Story -> ReviewedStory
+        transformation<Story, ReviewedStory>(
+            name = "reviewStory",
+            description = "Review the story",
+        ) {
+            ReviewedStory(it.input, HumanFeedback(approved = true, comments = "Looks good!"))
+        }
+
+        // Goal: defines what we're trying to achieve
+        goal(
+            name = "ReviewedStory",
+            description = "A reviewed story",
+            satisfiedBy = ReviewedStory::class,
+        )
+    }
+}
+----
+
+====== Agents with LLM-Powered Actions
+
+The Kotlin DSL also supports LLM-powered transformations:
+
+[source,kotlin]
+----
+fun createLlmPoweredAgent(): Agent {
+    return agent(
+        name = "LlmProcessor",
+        description = "Process data with LLM",
+    ) {
+        // LLM-powered transformation
+        promptedTransformer<UserInput, Summary>(
+            name = "summarize",
+            description = "Summarize the input",
+            llm = LlmOptions(temperature = 0.7),
+        ) { ctx ->
+            "Summarize this text: ${ctx.input.content}"
+        }
+
+        goal(
+            name = "Summary",
+            description = "A summary of the input",
+            satisfiedBy = Summary::class,
+        )
+    }
+}
+----
+
+====== Returning DSL-Created Agents from Actions
+
+DSL-created agents can be returned from actions to run as nested agents:
+
+[source,kotlin]
+----
+@Agent(description = "Orchestrator that delegates to DSL agents")
+class OrchestratorAgent {
+
+    @Action
+    @AchievesGoal(description = "Process via delegated DSL agent")
+    fun process(input: UserInput): Agent {  // <1>
+        return agent(                        // <2>
+            name = "DynamicProcessor",
+            description = "Dynamically created processor",
+        ) {
+            transformation<UserInput, ProcessedData>(
+                name = "process",
+                description = "Process the input",
+            ) {
+                ProcessedData("dynamically processed: ${it.input.content}")
+            }
+
+            goal(
+                name = "ProcessedData",
+                description = "Data processed",
+                satisfiedBy = ProcessedData::class,
+            )
+        }
+    }
+}
+----
+
+<1> Return `Agent` (which implements `AgentScope`) from an action
+<2> Create the agent dynamically using the DSL
+
+This pattern enables powerful dynamic agent composition where the nested agent's structure is determined at runtime.
+
+====== Use Cases for Programmatic Agents
+
+Programmatic agents are useful when:
+
+* *Dynamic composition*: The nested agent's structure depends on runtime conditions
+* *Factory patterns*: Creating specialized agents based on input characteristics
+* *DSL-based workflows*: Using `SimpleAgentBuilder`, `RepeatUntilBuilder`, or `agent {}` DSL
+* *Testing*: Creating lightweight agents for test scenarios without annotations
