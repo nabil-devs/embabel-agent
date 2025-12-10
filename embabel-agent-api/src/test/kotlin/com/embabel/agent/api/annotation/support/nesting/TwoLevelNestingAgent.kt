@@ -46,15 +46,13 @@ class TwoLevelNestingAgent {
     class Level2(val person: PersonWithReverseTool) {
 
         // This should pop out to top level goal
-        @Action
-        @AchievesGoal(description = "Convert PersonWithReverseTool to Frog")
+        @Action(goal = "Convert PersonWithReverseTool to Frog")
         fun toFrog(): Frog {
             return Frog(person.name)
         }
     }
 
-    @Action
-    @AchievesGoal(description = "Convert PersonWithReverseTool to Frog")
+    @Action(goal = "Convert PersonWithReverseTool to Frog")
     fun end(frog: Frog): String {
         return "Received frog named: ${frog.name}"
     }

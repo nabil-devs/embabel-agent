@@ -499,8 +499,11 @@ class AgentMetadataReader(
     }
 
     /**
-     * If the @Action method also has an @AchievesGoal annotation,
-     * create a goal from it.
+     * Create a goal from an @Action method if it has either:
+     * - An @AchievesGoal annotation, OR
+     * - A non-empty goal parameter in the @Action annotation
+     *
+     * When using @Action(goal="..."), the description defaults to the goal value if not set.
      */
     private fun createGoalFromActionMethod(
         method: Method,
@@ -508,7 +511,14 @@ class AgentMetadataReader(
         instance: Any,
     ): AgentCoreGoal? {
         val actionAnnotation = method.getAnnotation(Action::class.java)
-        val goalAnnotation = method.getAnnotation(AchievesGoal::class.java) ?: return null
+        val goalAnnotation = method.getAnnotation(AchievesGoal::class.java)
+
+        // Determine goal description: @AchievesGoal takes precedence, then @Action(goal=...)
+        val goalDescription = when {
+            goalAnnotation != null -> goalAnnotation.description
+            actionAnnotation.goal.isNotBlank() -> actionAnnotation.goal
+            else -> return null // No goal defined
+        }
 
         // Resolve the effective output type - if it's a Workflow<O>, use O instead
         val effectiveOutputType = resolveEffectiveOutputType(method.returnType)
@@ -517,20 +527,29 @@ class AgentMetadataReader(
             name = actionAnnotation.outputBinding,
             type = effectiveOutputType.name,
         )
-        return AgentCoreGoal(
-            name = nameGenerator.generateName(instance, method.name),
-            description = goalAnnotation.description,
-            inputs = setOf(inputBinding),
-            outputType = JvmType(effectiveOutputType),
-            value = { goalAnnotation.value },
-            // Add precondition of the action having run
-            pre = setOf(Rerun.hasRunCondition(action)) + action.preconditions.keys.toSet(),
-            export = Export(
+
+        // Use values from @AchievesGoal if present, otherwise use defaults
+        val goalValue = goalAnnotation?.value ?: 0.0
+        val export = if (goalAnnotation != null) {
+            Export(
                 local = goalAnnotation.export.local,
                 remote = goalAnnotation.export.remote,
                 name = goalAnnotation.export.name.ifBlank { null },
                 startingInputTypes = goalAnnotation.export.startingInputTypes.map { it.java }.toSet(),
             )
+        } else {
+            Export()
+        }
+
+        return AgentCoreGoal(
+            name = nameGenerator.generateName(instance, method.name),
+            description = goalDescription,
+            inputs = setOf(inputBinding),
+            outputType = JvmType(effectiveOutputType),
+            value = { goalValue },
+            // Add precondition of the action having run
+            pre = setOf(Rerun.hasRunCondition(action)) + action.preconditions.keys.toSet(),
+            export = export,
         )
     }
 

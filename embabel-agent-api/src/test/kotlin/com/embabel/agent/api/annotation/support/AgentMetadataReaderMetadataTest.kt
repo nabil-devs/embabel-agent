@@ -226,6 +226,79 @@ class AgentMetadataReaderMetadataTest {
             val metadata = reader.createAgentMetadata(TwoConflictingActionGoals())
             TODO("decide what to do here: this invalid")
         }
+
+        @Test
+        fun `action goal shorthand creates goal`() {
+            val reader = AgentMetadataReader()
+            val metadata = reader.createAgentMetadata(ActionGoalShorthand())
+            assertNotNull(metadata)
+            assertEquals(1, metadata!!.goals.size)
+            val g = metadata.goals.single()
+            assertEquals("Creating a person", g.description)
+            assertTrue(
+                g.preconditions.containsAll(mapOf("it:${PersonWithReverseTool::class.qualifiedName}" to ConditionDetermination.TRUE)),
+                "Should have precondition for Person",
+            )
+        }
+
+        @Test
+        fun `action goal shorthand requires action method to have run`() {
+            val reader = AgentMetadataReader()
+            val metadata = reader.createAgentMetadata(ActionGoalShorthand())
+            assertNotNull(metadata)
+            assertEquals(1, metadata!!.goals.size)
+            val action = metadata.actions.single()
+            val g = metadata.goals.single()
+            assertEquals(PersonWithReverseTool::class.java, (g.outputType as JvmType).clazz)
+            val expected = mapOf(
+                "it:${PersonWithReverseTool::class.qualifiedName}" to ConditionDetermination.TRUE,
+                Rerun.hasRunCondition(action) to ConditionDetermination.TRUE
+            )
+            assertTrue(
+                g.preconditions.containsAll(expected),
+                "Should have precondition for input to the action method: have\n${g.preconditions}, expected\n$expected",
+            )
+        }
+
+        @Test
+        fun `two action goals shorthand`() {
+            val reader = AgentMetadataReader()
+            val metadata = reader.createAgentMetadata(TwoActionGoalsShorthand())
+            assertNotNull(metadata)
+            assertEquals(2, metadata!!.goals.size)
+            val personGoal = metadata.goals.find { it.name == TwoActionGoalsShorthand::class.java.name + ".toPerson" }
+                ?: fail("Should have toPerson goal: " + metadata.goals.map { it.name })
+            val frogGoal = metadata.goals.find { it.name == TwoActionGoalsShorthand::class.java.name + ".toFrog" }
+                ?: fail("Should have toFrog goal: " + metadata.goals.map { it.name })
+
+            assertEquals("Creating a person", personGoal.description)
+            assertEquals("Creating a frog", frogGoal.description)
+        }
+
+        @Test
+        fun `mixed goal annotations work together`() {
+            val reader = AgentMetadataReader()
+            val metadata = reader.createAgentMetadata(MixedGoalAnnotations())
+            assertNotNull(metadata)
+            assertEquals(2, metadata!!.goals.size)
+            val personGoal = metadata.goals.find { it.name == MixedGoalAnnotations::class.java.name + ".toPerson" }
+                ?: fail("Should have toPerson goal: " + metadata.goals.map { it.name })
+            val frogGoal = metadata.goals.find { it.name == MixedGoalAnnotations::class.java.name + ".toFrog" }
+                ?: fail("Should have toFrog goal: " + metadata.goals.map { it.name })
+
+            assertEquals("Creating a person via @AchievesGoal", personGoal.description)
+            assertEquals("Creating a frog via goal parameter", frogGoal.description)
+        }
+
+        @Test
+        fun `AchievesGoal takes precedence over goal parameter`() {
+            val reader = AgentMetadataReader()
+            val metadata = reader.createAgentMetadata(ActionGoalWithAchievesGoal())
+            assertNotNull(metadata)
+            assertEquals(1, metadata!!.goals.size)
+            val g = metadata.goals.single()
+            assertEquals("Description from @AchievesGoal", g.description)
+        }
     }
 
 

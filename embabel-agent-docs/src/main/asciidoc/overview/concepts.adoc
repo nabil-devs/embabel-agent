@@ -118,7 +118,7 @@ Each action represents a capability.
 
 <12> **Tool-Enabled LLM**: The LLM can use web tools to search for current news stories based on the horoscope context.
 
-<13> **Goal Achievement**: `@AchievesGoal` marks this as a terminal action that completes the agent's objective.
+<13> **Goal Achievement**: `@AchievesGoal` marks this as a terminal action that completes the agent's objective. For simple cases, you can use `@Action(goal = "description")` as a shorthand.
 
 <14> **Complex Input Requirements**: The final action requires three different data types, showing sophisticated orchestration.
 

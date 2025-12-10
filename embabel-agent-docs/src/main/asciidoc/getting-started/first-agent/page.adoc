@@ -61,6 +61,7 @@ public class WriteAndReviewAgent {
 
 - `@Action` methods are the steps the agent can take
 - `@AchievesGoal` marks the final action that completes the agent's work
+- TIP: You can also use `@Action(goal = "description")` as a shorthand for simple goals
 
 **Domain Objects:**
 

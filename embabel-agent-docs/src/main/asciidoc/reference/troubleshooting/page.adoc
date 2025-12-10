@@ -48,11 +48,11 @@ will assume that the conditions are never set and your plan will not execute as 
 |<<overview__concepts,Type-Driven Flow>>
 
 |**Your Agent Has No Goals and Cannot Execute**
-|Look at the `@AchievesGoal` annotation and ensure your terminal action is annotated with it. Every agent needs at least one action marked with `@AchievesGoal` to define what constitutes completion of the agent's work.
+|Ensure your terminal action defines a goal. You can use either `@Action(goal = "description")` or the separate `@AchievesGoal` annotation. Every agent needs at least one action with a goal to define what constitutes completion of the agent's work.
 |<<reference.annotations,Annotations>>
 
 |**Your Agent Isn't Visible to an MCP Client Like Claude Desktop**
-|Ensure that your `@AchievesGoal` annotation includes `@Export(remote=true)`. This makes your agent available for remote invocation through MCP (Model Context Protocol) clients.
+|Ensure that your goal is exported. This requires using `@AchievesGoal(export = @Export(remote=true))` (the `@Action(goal="...")` shorthand doesn't support export settings). This makes your agent available for remote invocation through MCP (Model Context Protocol) clients.
 |<<reference.annotations,Annotations>>, <<reference.integrations,Integrations>>
 
 |**Your Agent Can't Use Upstream MCP Tools and You're Seeing Errors in Logs About Possible Misconfiguration**

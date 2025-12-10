@@ -180,6 +180,7 @@ annotation class ToolGroup(
  * @param toolGroups Tool groups that this action requires. These are well known tools from the server.
  * @param toolGroupRequirements Tool groups required, with explicit metadata such as QoS requirements.
  * @Tool methods on the @Agentic class are automatically added.
+ * @param goal if this is set, the action is considered to achieve the specified goal.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -194,6 +195,7 @@ annotation class Action(
     val value: ZeroToOne = 0.0,
     val toolGroups: Array<String> = [],
     val toolGroupRequirements: Array<ToolGroup> = [],
+    val goal: String = "",
 )
 
 

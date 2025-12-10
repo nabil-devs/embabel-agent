@@ -162,13 +162,13 @@ Unlike LangGraph, Embabel workflows are fully typesafe and enjoy the benefits of
 
 The key insight is simple: **returning an `@Agentic` class from an action enters that workflow as a nested agent.**
 
-For GOAP planning, the nested class must have exactly one business goal (defined via `@AchievesGoal`) so the planner knows the output type.
+For GOAP planning, the nested class must have exactly one business goal (defined via `@AchievesGoal` or `@Action(goal="...")`) so the planner knows the output type.
 For Utility AI planning, any `@Agentic` class with actions can be nested.
 
 1. When an action returns an `@Agentic` class instance (e.g., `@Subflow` or `@Agent`), the process enters that workflow
-2. The goal's output type (from `@AchievesGoal`) tells the planner what type the workflow produces
+2. The goal's output type (from `@AchievesGoal` or `@Action(goal="...")`) tells the planner what type the workflow produces
 3. Within each workflow, the planner selects which action to execute based on preconditions and effects
-4. When an action with `@AchievesGoal` completes, the workflow finishes and returns its result
+4. When a goal-achieving action completes, the workflow finishes and returns its result
 5. The workflow's result replaces the workflow object on the parent's blackboard
 
 ===== Example: Write and Review Workflow
@@ -383,6 +383,10 @@ class ProcessingPhase(val data: String) {
 |Yes - output type inferred from goal
 |Yes
 
+|`@Subflow` with no goal
+|No - output type unknown
+|Yes
+
 |`@Subflow` with multiple goals
 |No - ambiguous output type
 |Yes
@@ -400,8 +404,8 @@ class ProcessingPhase(val data: String) {
 |Yes
 |===
 
-TIP: For GOAP compatibility, ensure your nested class has exactly one `@AchievesGoal` annotation.
-Utility AI is more flexible and works with any number of goals.
+TIP: For GOAP compatibility, ensure your nested class has exactly one goal defined via `@Action(goal="...")` or `@AchievesGoal`.
+Utility AI is more flexible and works with any number of goals (including none).
 
 ====== Example: @Subflow with Utility AI
 
@@ -432,35 +436,84 @@ class DataProcessor {
 <2> Still use `@AchievesGoal` to mark terminal actions
 <3> Returning a `@Subflow` from an action enters it as a nested agent (Utility AI only)
 
-====== @Subflow Chaining
+====== @Subflow Chaining (Multi-Level Nesting)
 
-@Subflow instances can return other @Subflow instances, enabling multi-phase processing:
+@Subflow instances can return other @Subflow instances, enabling multi-level nested processing.
+Each level must have a goal so the planner can resolve the output type chain.
+
+Consider this execution flow:
+
+[literal]
+....
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         TwoLevelNestingAgent                                │
+│                                                                             │
+│  UserInput ──► start() ──► Level1 ──► Level2 ──► Frog ──► end() ──► String │
+│                              │          │         │                         │
+│                              ▼          ▼         │                         │
+│                          (nested)   (nested)      │                         │
+│                           agent      agent        │                         │
+│                              │          │         │                         │
+│                              └──────────┴─────────┘                         │
+│                                     Output "bubbles up"                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Planning resolution (right to left):
+  end() needs Frog ◄── Level2 produces Frog ◄── Level1 produces Level2 ◄── start()
+....
+
+Here is the code:
 
 [source,kotlin]
 ----
-@Subflow
-class ValidationPhase(val data: String) {
+@Agent(description = "Two levels of nesting")
+class TwoLevelNestingAgent {
 
     @Action
-    @AchievesGoal(description = "Validate and proceed")
-    fun validate(): ProcessingPhase {  // <1>
-        // Validation logic...
-        return ProcessingPhase(data)
+    fun start(userInput: UserInput): Level1 {                   // <1>
+        return Level1("Processing: ${userInput.content}")
     }
-}
 
-@Subflow
-class ProcessingPhase(val data: String) {
+    @Subflow
+    class Level1(val name: String) {
 
-    @Action
-    @AchievesGoal(description = "Process complete")
-    fun process(): Result {
-        return Result(data.processed())
+        @Action(goal = "Convert to Level2")                      // <2>
+        fun toL2(): Level2 {
+            return Level2(PersonWithReverseTool(name))
+        }
+    }
+
+    @Subflow
+    class Level2(val person: PersonWithReverseTool) {
+
+        @Action(goal = "Convert to Frog")                        // <3>
+        fun toFrog(): Frog {
+            return Frog(person.name)
+        }
+    }
+
+    @Action(goal = "Complete with final message")                // <4>
+    fun end(frog: Frog): String {
+        return "Received frog named: ${frog.name}"
     }
 }
 ----
 
-<1> Returning another `@Subflow` chains to the next phase
+<1> `start()` returns `Level1`, which is a `@Subflow`
+<2> `Level1` has a goal that produces `Level2` (another `@Subflow`)
+<3> `Level2` has a goal that produces `Frog` (final domain type)
+<4> `end()` receives the `Frog` that bubbled up from the nested subflows
+
+**How the planner resolves this:**
+
+1. GOAP sees `end()` needs a `Frog`
+2. `Level2.toFrog()` produces `Frog` → so `Level2` ultimately produces `Frog`
+3. `Level1.toL2()` produces `Level2` → since `Level2` produces `Frog`, `Level1` ultimately produces `Frog`
+4. `start()` returns `Level1` → so `start()` ultimately produces `Frog`
+5. Plan: `start() → end()` (subflow execution is automatic)
+
+IMPORTANT: Each `@Subflow` must define exactly one goal (via `@Action(goal="...")` or `@AchievesGoal`).
+Without a goal, GOAP cannot determine what the subflow produces, and planning will fail.
 
 [[reference.planners__nested_agents]]
 ===== @Agent Classes as Nested Agents

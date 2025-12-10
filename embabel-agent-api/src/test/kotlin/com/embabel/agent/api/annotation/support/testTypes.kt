@@ -872,3 +872,77 @@ class MostSpecificPath {
     ) = Prince(frog.name)
 
 }
+
+// Test types for @Action(goal="...") shorthand
+
+/**
+ * Uses @Action(goal="...") shorthand instead of @AchievesGoal
+ */
+@EmbabelComponent
+class ActionGoalShorthand {
+
+    @Action(goal = "Creating a person")
+    fun toPerson(userInput: UserInput): PersonWithReverseTool {
+        return PersonWithReverseTool(userInput.content)
+    }
+}
+
+/**
+ * Uses @Action(goal="...") with explicit description that differs from goal
+ */
+@EmbabelComponent
+class ActionGoalWithDescription {
+
+    @Action(description = "Transform user input to person", goal = "Creating a person")
+    fun toPerson(userInput: UserInput): PersonWithReverseTool {
+        return PersonWithReverseTool(userInput.content)
+    }
+}
+
+/**
+ * Two actions using @Action(goal="...") shorthand
+ */
+@EmbabelComponent
+class TwoActionGoalsShorthand {
+
+    @Action(goal = "Creating a person")
+    fun toPerson(userInput: UserInput): PersonWithReverseTool {
+        return PersonWithReverseTool(userInput.content)
+    }
+
+    @Action(goal = "Creating a frog")
+    fun toFrog(person: PersonWithReverseTool): Frog {
+        return Frog(person.name)
+    }
+}
+
+/**
+ * Mixed usage: one action with @AchievesGoal, one with @Action(goal="...")
+ */
+@EmbabelComponent
+class MixedGoalAnnotations {
+
+    @AchievesGoal(description = "Creating a person via @AchievesGoal")
+    @Action
+    fun toPerson(userInput: UserInput): PersonWithReverseTool {
+        return PersonWithReverseTool(userInput.content)
+    }
+
+    @Action(goal = "Creating a frog via goal parameter")
+    fun toFrog(person: PersonWithReverseTool): Frog {
+        return Frog(person.name)
+    }
+}
+
+/**
+ * Action with goal and both @AchievesGoal - @AchievesGoal should take precedence
+ */
+@EmbabelComponent
+class ActionGoalWithAchievesGoal {
+
+    @AchievesGoal(description = "Description from @AchievesGoal")
+    @Action(goal = "Description from goal parameter")
+    fun toPerson(userInput: UserInput): PersonWithReverseTool {
+        return PersonWithReverseTool(userInput.content)
+    }
+}

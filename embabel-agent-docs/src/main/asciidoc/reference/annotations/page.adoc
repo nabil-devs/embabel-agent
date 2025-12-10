@@ -14,6 +14,48 @@ It will also be registered with the agent framework, so it can be used in agent 
 You must provide the `description` parameter, which is a human-readable description of the agent.
 This is particularly important as it may be used by the LLM in agent selection.
 
+==== The `@Subflow` annotation
+
+The `@Subflow` annotation marks a class that can be returned from an action to enter a nested workflow. Unlike `@Agent`, it is not a Spring stereotype and does not trigger component scanning.
+
+Use `@Subflow` when you want to:
+
+* Create nested workflows within an agent
+* Define distinct phases or states in a multi-step process
+* Encapsulate related actions that produce a specific output
+
+IMPORTANT: For GOAP planning, a `@Subflow` class must define exactly one goal using either `@Action(goal = "...")` or `@AchievesGoal`. This tells the planner what type the subflow produces. Without a goal, GOAP cannot determine the output type and will fail to plan.
+
+Example:
+
+[source,kotlin]
+----
+@Agent(description = "Agent with nested subflow")
+class MyAgent {
+
+    @Action
+    fun start(input: UserInput): ProcessingPhase {
+        return ProcessingPhase(input.content)
+    }
+
+    @Subflow
+    class ProcessingPhase(val data: String) {
+
+        @Action(goal = "Process data into result")  // Required for GOAP!
+        fun process(): Result {
+            return Result(data.uppercase())
+        }
+    }
+
+    @Action(goal = "Complete the workflow")
+    fun complete(result: Result): FinalOutput {
+        return FinalOutput(result.value)
+    }
+}
+----
+
+See <<reference.planners__workflows,Nested Workflows>> for more details on how subflows work with different planners.
+
 ==== The `@Action` annotation
 
 The `@Action` annotation is used to mark methods that perform actions within an agent.
@@ -21,6 +63,7 @@ The `@Action` annotation is used to mark methods that perform actions within an 
 Action metadata can be specified on the annotation, including:
 
 - `description`: A human-readable description of the action.
+- `goal`: If set, indicates this action achieves a goal with this description. This is a shorthand for adding `@AchievesGoal(description="...")`. See <<Defining goals on actions>> for details.
 - `pre`: A list of preconditions _additional to the input types_ that must be satisfied before the action can be executed.
 - `post`: A list of postconditions _additional to the output type(s)_ that may be satisfied after the action is executed.
 - `canRerun`: A boolean indicating whether the action can be rerun if it has already been executed.
@@ -184,9 +227,44 @@ An `@Action` method is a normal method, and can use any libraries or frameworks 
 
 The only special thing about it is its ability to use the `OperationContext` parameter to access the blackboard and invoke LLMs.
 
-==== The `@AchievesGoal` annotation
+==== Defining goals on actions
 
-The `@AchievesGoal` annotation can be added to an `@Action` method to indicate that the completion of the action achieves a specific goal.
+Actions can define goals using the `goal` parameter on `@Action`, or by adding a separate `@AchievesGoal` annotation.
+
+===== Using `@Action(goal="...")`
+
+The simplest way to indicate that an action achieves a goal is using the `goal` parameter:
+
+[source,kotlin]
+----
+@Action(goal = "Create a person from user input")
+fun toPerson(userInput: UserInput): Person {
+    return Person(userInput.content)
+}
+----
+
+The `goal` parameter sets the goal description. If you also provide a `description` parameter, it applies only to the action itself, while `goal` defines the goal that completing this action achieves.
+
+===== Using `@AchievesGoal`
+
+For more advanced cases, you can use the `@AchievesGoal` annotation separately. This provides additional options like export settings and goal value:
+
+[source,kotlin]
+----
+@AchievesGoal(
+    description = "Create a person from user input",
+    value = 0.8,                    // Goal value for utility-based planning
+    export = ExportGoal(remote = true)  // Export goal for MCP
+)
+@Action
+fun toPerson(userInput: UserInput): Person {
+    return Person(userInput.content)
+}
+----
+
+TIP: Use `@Action(goal="...")` for simple cases. Use `@AchievesGoal` when you need export settings, goal values, or other advanced configuration.
+
+NOTE: If both `@AchievesGoal` and `@Action(goal="...")` are present, `@AchievesGoal` takes precedence.
 
 ==== Implementing the `StuckHandler` interface
 
