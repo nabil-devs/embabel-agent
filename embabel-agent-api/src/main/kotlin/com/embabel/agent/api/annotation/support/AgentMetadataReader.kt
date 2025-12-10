@@ -77,23 +77,34 @@ internal data class AgenticInfo(
     val isFlowReturning: Boolean = FlowReturning::class.java.isAssignableFrom(targetType)
 
     /**
-     * Does this type have the @Subflow annotation (directly or as meta-annotation)?
-     * This includes classes annotated with @Agent (which is meta-annotated with @Subflow).
+     * Does this type have the @Agentic annotation (directly or as meta-annotation)?
+     * This includes classes annotated with @Agent, @EmbabelComponent, or @Subflow.
+     */
+    val isAgentic: Boolean = hasAgenticAnnotation(targetType)
+
+    /**
+     * Does this type have the @Subflow annotation (directly or via meta-annotation)?
+     * Used to identify classes intended for nesting in Utility AI.
      */
     val isSubflow: Boolean = hasSubflowAnnotation(targetType)
 
-    /**
-     * Does this type have the @Subflow annotation directly (not via meta-annotation)?
-     * Used to identify standalone subflow classes that need NIRVANA goal.
-     */
-    val isDirectSubflow: Boolean = targetType.isAnnotationPresent(Subflow::class.java)
+    private fun hasAgenticAnnotation(clazz: Class<*>): Boolean {
+        // Check for direct @Agentic annotation
+        if (clazz.isAnnotationPresent(Agentic::class.java)) {
+            return true
+        }
+        // Check for meta-annotation (e.g., @Agent, @EmbabelComponent, @Subflow are annotated with @Agentic)
+        return clazz.annotations.any { annotation ->
+            annotation.annotationClass.java.isAnnotationPresent(Agentic::class.java)
+        }
+    }
 
     private fun hasSubflowAnnotation(clazz: Class<*>): Boolean {
         // Check for direct @Subflow annotation
         if (clazz.isAnnotationPresent(Subflow::class.java)) {
             return true
         }
-        // Check for meta-annotation (e.g., @Agent is annotated with @Subflow)
+        // Check for meta-annotation (but NOT @Agent - @Subflow must be explicit)
         return clazz.annotations.any { annotation ->
             annotation.annotationClass.java.isAnnotationPresent(Subflow::class.java)
         }
@@ -103,9 +114,9 @@ internal data class AgenticInfo(
 
     /**
      * Is this type agentic at all?
-     * True if it has @EmbabelComponent, @Agent, @Subflow, or implements FlowReturning interface.
+     * True if it has @Agentic (via @Agent, @EmbabelComponent, or @Subflow) or implements FlowReturning interface.
      */
-    fun agentic() = embabelComponentAnnotation != null || agentAnnotation != null || isFlowReturning || isSubflow
+    fun agentic() = isAgentic || isFlowReturning
 
     fun validationErrors(): Collection<String> {
         val errors = mutableListOf<String>()
@@ -230,9 +241,9 @@ class AgentMetadataReader(
                     )
                 )
             }
-            // For standalone @Subflow classes (direct annotation, not @Agent, not @EmbabelComponent, not FlowReturning), add NIRVANA goal
+            // For @Subflow classes (not @Agent, not @EmbabelComponent, not FlowReturning), add NIRVANA goal
             // since @Subflow is meant to be used with Utility AI which needs NIRVANA
-            if (agenticInfo.isDirectSubflow && !agenticInfo.isFlowReturning &&
+            if (agenticInfo.isSubflow && !agenticInfo.isFlowReturning &&
                 agenticInfo.agentAnnotation == null && agenticInfo.embabelComponentAnnotation == null
             ) {
                 add(NIRVANA)

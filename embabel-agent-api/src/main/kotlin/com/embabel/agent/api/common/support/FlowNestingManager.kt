@@ -15,7 +15,7 @@
  */
 package com.embabel.agent.api.common.support
 
-import com.embabel.agent.api.annotation.Subflow
+import com.embabel.agent.api.annotation.Agentic
 import com.embabel.agent.api.annotation.support.AgentMetadataReader
 import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.subflow.FlowReturning
@@ -25,15 +25,15 @@ import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
 /**
- * Detects when an action returns a FlowReturning or @Subflow-annotated instance and runs it as a nested sub-agent.
+ * Detects when an action returns a FlowReturning or @Agentic-annotated instance and runs it as a nested sub-agent.
  *
  * This enables composition where an action can return an instance of a class
- * implementing FlowReturning or annotated with @Subflow to enter a nested flow.
- * The nested flow runs to completion, and its result becomes available on the blackboard.
+ * implementing FlowReturning or annotated with @Agentic (or its meta-annotated variants like @Agent or @Subflow)
+ * to enter a nested flow. The nested flow runs to completion, and its result becomes available on the blackboard.
  *
  * For GOAP planning, classes must implement [com.embabel.agent.api.common.subflow.FlowReturning] to specify their output type.
- * For Utility AI planning, classes can implement [com.embabel.agent.api.common.subflow.FlowReturning] or be annotated
- * with @Subflow (which includes @Agent classes) since no goal-oriented planning is needed.
+ * For Utility AI planning, classes can implement [com.embabel.agent.api.common.subflow.FlowReturning] or have
+ * the @Agentic annotation (directly or via @Agent, @Subflow, @EmbabelComponent) since no goal-oriented planning is needed.
  */
 internal class FlowNestingManager(
     private val agentMetadataReader: AgentMetadataReader = AgentMetadataReader(),
@@ -55,12 +55,11 @@ internal class FlowNestingManager(
     }
 
     /**
-     * Check if the given object is a @Subflow-annotated class that can be run as a nested agent.
-     * This includes classes directly annotated with @Subflow and classes annotated with
-     * @Agent (which is meta-annotated with @Subflow).
+     * Check if the given object is an @Agentic-annotated class that can be run as a nested agent.
+     * This includes classes annotated with @Agent, @Subflow, @EmbabelComponent, or directly with @Agentic.
      */
     fun isSubflow(obj: Any): Boolean {
-        if (!hasSubflowAnnotation(obj.javaClass)) {
+        if (!hasAgenticAnnotation(obj.javaClass)) {
             return false
         }
         // Verify it has @Action methods that can be executed
@@ -69,16 +68,17 @@ internal class FlowNestingManager(
     }
 
     /**
-     * Check if a class has the @Subflow annotation, either directly or as a meta-annotation.
+     * Check if a class has the @Agentic annotation (directly or as a meta-annotation on its annotations).
+     * This includes @Agent, @Subflow, @EmbabelComponent, and any other annotation meta-annotated with @Agentic.
      */
-    private fun hasSubflowAnnotation(clazz: Class<*>): Boolean {
-        // Check for direct @Subflow annotation
-        if (clazz.isAnnotationPresent(Subflow::class.java)) {
+    private fun hasAgenticAnnotation(clazz: Class<*>): Boolean {
+        // Check for direct @Agentic annotation
+        if (clazz.isAnnotationPresent(Agentic::class.java)) {
             return true
         }
-        // Check for meta-annotation (e.g., @Agent is annotated with @Subflow)
+        // Check for meta-annotation (e.g., @Agent, @Subflow, @EmbabelComponent which have @Agentic)
         return clazz.annotations.any { annotation ->
-            annotation.annotationClass.java.isAnnotationPresent(Subflow::class.java)
+            annotation.annotationClass.java.isAnnotationPresent(Agentic::class.java)
         }
     }
 

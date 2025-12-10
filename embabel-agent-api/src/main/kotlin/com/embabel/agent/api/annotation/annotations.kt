@@ -24,6 +24,28 @@ import org.springframework.stereotype.Component
 
 
 /**
+ * Meta-annotation indicating that a class contains @Action methods and can be processed
+ * by the Embabel agent runtime.
+ *
+ * This is the foundational marker for all agentic classes. It is used as a meta-annotation on:
+ * - [@Agent] - Spring-managed agents
+ * - [@EmbabelComponent] - Spring-managed action providers
+ * - [@Subflow] - Classes intended for nesting in Utility AI
+ *
+ * You typically don't use this annotation directly - use one of the above instead.
+ *
+ * @see Agent for Spring-managed agents
+ * @see EmbabelComponent for action providers that aren't agents
+ * @see Subflow for classes that can be returned from actions for nesting
+ */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(
+    AnnotationTarget.CLASS,
+    AnnotationTarget.ANNOTATION_CLASS,
+)
+annotation class Agentic
+
+/**
  * Indicates that this class exposes actions, goals and conditions that may be used
  * by agents, but is not an agent in itself.
  * This is a Spring stereotype annotation, so annotated classes will be picked up on the classpath and injected
@@ -36,21 +58,21 @@ import org.springframework.stereotype.Component
     AnnotationTarget.CLASS,
 )
 @Component
-@Subflow
+@Agentic
 annotation class EmbabelComponent(
     val scan: Boolean = true,
 )
 
 /**
  * Indicates that this class contains @Action methods and can be run as a nested subflow.
- * This is the base marker for classes that can be used as subflows in Utility AI planning.
+ * This is the marker for classes that can be used as subflows in Utility AI planning.
  *
  * Use this annotation directly when:
  * - Using Utility AI planner (which doesn't require goal-oriented planning)
  * - You want to return an action-containing class from an action
  * - You don't need Spring component scanning (non-bean instances)
  *
- * For Spring-managed agents, use [@Agent] which is meta-annotated with @Subflow.
+ * For Spring-managed agents, use [@Agent] which is meta-annotated with @Agentic.
  * For GOAP planning where you need a known output type, use [com.embabel.agent.api.common.subflow.FlowReturning] instead.
  *
  * Example:
@@ -73,6 +95,7 @@ annotation class EmbabelComponent(
     AnnotationTarget.CLASS,
     AnnotationTarget.ANNOTATION_CLASS,
 )
+@Agentic
 annotation class Subflow
 
 /**
@@ -81,6 +104,10 @@ annotation class Subflow
  * it is an agent in itself.
  * This is a Spring stereotype annotation, so annotated classes will be picked up on the classpath and injected
  * Either @Agent or @AgentCapabilities should be used: not both
+ *
+ * Note: @Agent is meta-annotated with @Agentic, meaning @Agent classes can be returned from
+ * actions to run as nested agents in Utility AI planning.
+ *
  * @param name Name of the agent. If not provided, the name will be the class simple name
  * @param provider provider of the agent. If not provided, will default to the package this annotation is used in
  * @param description Description of the agent. Required. This is used for documentation purposes and to choose an agent
@@ -97,7 +124,7 @@ annotation class Subflow
     AnnotationTarget.CLASS,
 )
 @Component
-@Subflow
+@Agentic
 annotation class Agent(
     val name: String = "",
     val provider: String = "",

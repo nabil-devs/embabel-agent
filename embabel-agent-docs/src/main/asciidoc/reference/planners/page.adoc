@@ -380,13 +380,13 @@ class ProcessingPhase(val data: String) {
 
 |`@Agent` class
 |Composing existing Spring-managed agents
-|Utility only (meta-annotated with @Subflow)
+|Utility only (meta-annotated with @Agentic)
 |===
 
 IMPORTANT: `@Subflow` nesting only works with the Utility planner.
 If you try to return a `@Subflow` instance from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
 
-NOTE: The `@Agent` annotation is meta-annotated with `@Subflow`, so any `@Agent` class can also be used as a nested subflow with Utility AI.
+NOTE: The `@Agent` annotation is meta-annotated with `@Agentic`, so any `@Agent` class can also be used as a nested agent with Utility AI.
 
 ====== Example: @Subflow with Utility AI
 
@@ -450,7 +450,7 @@ class ProcessingPhase(val data: String) {
 [[reference.planners__nested_agents]]
 ===== @Agent Classes as Nested Agents
 
-Since `@Agent` is meta-annotated with `@Subflow`, any `@Agent` class can be returned from actions when using Utility AI.
+Since `@Agent` is meta-annotated with `@Agentic`, any `@Agent` class can be returned from actions when using Utility AI.
 This enables injecting agents as dependencies and delegating work to them.
 
 [source,kotlin]
