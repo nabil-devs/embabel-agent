@@ -15,6 +15,7 @@
  */
 package com.embabel.agent.api.annotation.support
 
+import com.embabel.agent.api.annotation.Agentic
 import com.embabel.agent.api.annotation.AwaitableResponseException
 import com.embabel.agent.api.common.TransformationActionContext
 import com.embabel.agent.api.common.subflow.FlowReturning
@@ -103,6 +104,7 @@ internal class DefaultActionMethodManager(
      * - If the return type implements FlowReturning<O>, extract O from the generic type.
      * - If the return type is AgentScope/Agent, invoke the method to get the instance and
      *   extract the output type from its single business goal.
+     * - If the return type is @Agentic (e.g., @Subflow), extract the output type from its goals.
      * - Otherwise, return the method's return type directly.
      */
     private fun resolveOutputClass(method: Method, instance: Any): Class<*> {
@@ -118,7 +120,103 @@ internal class DefaultActionMethodManager(
             return resolveAgentScopeOutputClass(method, instance) ?: returnType
         }
 
+        // Handle @Agentic classes (e.g., @Subflow) - extract output from goals
+        if (isAgenticClass(returnType)) {
+            return resolveAgenticClassOutputType(returnType) ?: returnType
+        }
+
         return returnType
+    }
+
+    /**
+     * Check if a class has @Agentic annotation (directly or via meta-annotation like @Subflow, @Agent).
+     */
+    private fun isAgenticClass(clazz: Class<*>): Boolean {
+        // Check for direct @Agentic
+        if (clazz.isAnnotationPresent(Agentic::class.java)) {
+            return true
+        }
+        // Check for meta-annotation
+        return clazz.annotations.any { annotation ->
+            annotation.annotationClass.java.isAnnotationPresent(Agentic::class.java)
+        }
+    }
+
+    /**
+     * Extract the output type from an @Agentic class (e.g., @Subflow) by analyzing its goals.
+     * If the class has exactly one business goal with an outputType, return that type.
+     *
+     * If the output type is itself an @Agentic class, recursively resolve to get the final output type.
+     * This enables multi-level nesting where Level1 -> Level2 -> Frog resolves to Frog.
+     */
+    private fun resolveAgenticClassOutputType(clazz: Class<*>): Class<*>? {
+        return resolveAgenticClassOutputTypeRecursive(clazz, mutableSetOf())
+    }
+
+    private fun resolveAgenticClassOutputTypeRecursive(clazz: Class<*>, visited: MutableSet<Class<*>>): Class<*>? {
+        // Prevent infinite recursion
+        if (clazz in visited) {
+            logger.debug("Cycle detected in @Agentic class resolution: {}", clazz.simpleName)
+            return null
+        }
+        visited.add(clazz)
+
+        try {
+            // Create a dummy instance to read metadata
+            val dummyInstance = createDummyInstance(clazz)
+            if (dummyInstance == null) {
+                logger.debug("Could not create dummy instance for @Agentic class {}", clazz.simpleName)
+                return null
+            }
+            val metadata = AgentMetadataReader().createAgentMetadata(dummyInstance)
+            if (metadata == null) {
+                logger.debug("Could not create metadata for @Agentic class {}", clazz.simpleName)
+                return null
+            }
+
+            val outputType = FlowNestingManager.DEFAULT.getOutputType(metadata)
+            if (outputType == null) {
+                logger.debug(
+                    "Could not determine output type from @Agentic class {}, using class directly",
+                    clazz.simpleName
+                )
+                return null
+            }
+
+            // If the output type is itself @Agentic, recursively resolve
+            if (isAgenticClass(outputType)) {
+                logger.debug(
+                    "@Agentic class {} has output type {} which is also @Agentic, resolving recursively",
+                    clazz.simpleName,
+                    outputType.simpleName
+                )
+                val recursiveResult = resolveAgenticClassOutputTypeRecursive(outputType, visited)
+                if (recursiveResult != null) {
+                    logger.debug(
+                        "Resolved @Agentic chain {} -> {} -> {}",
+                        clazz.simpleName,
+                        outputType.simpleName,
+                        recursiveResult.simpleName
+                    )
+                    return recursiveResult
+                }
+            }
+
+            logger.debug(
+                "Action returns @Agentic class {} with goal output type {}, using {} as action output type",
+                clazz.simpleName,
+                outputType.simpleName,
+                outputType.simpleName
+            )
+            return outputType
+        } catch (e: Exception) {
+            logger.debug(
+                "Could not analyze @Agentic class {} to determine output type: {}",
+                clazz.simpleName,
+                e.message
+            )
+            return null
+        }
     }
 
     /**

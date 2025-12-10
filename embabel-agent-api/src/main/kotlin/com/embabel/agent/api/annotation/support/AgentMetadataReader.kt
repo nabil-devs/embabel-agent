@@ -24,6 +24,7 @@ import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
 import com.embabel.agent.api.common.subflow.FlowReturning
+import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
 import com.embabel.agent.core.support.NIRVANA
@@ -47,6 +48,8 @@ import org.springframework.util.ReflectionUtils
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Proxy
+import kotlin.reflect.KClass
+import kotlin.reflect.full.primaryConstructor
 import com.embabel.agent.core.Action as CoreAction
 import com.embabel.agent.core.Agent as CoreAgent
 import com.embabel.agent.core.Condition as CoreCondition
@@ -534,13 +537,27 @@ class AgentMetadataReader(
     /**
      * Resolve the effective output type for an action method.
      * If the return type implements Workflow<O>, extract O from the generic type.
+     * If the return type is @Agentic (e.g., @Subflow), recursively resolve to get the final output type.
      * Otherwise, return the method's return type directly.
      */
     private fun resolveEffectiveOutputType(returnType: Class<*>): Class<*> {
-        if (!FlowReturning::class.java.isAssignableFrom(returnType)) {
-            return returnType
+        // Handle FlowReturning<O> - extract O from generic type
+        if (FlowReturning::class.java.isAssignableFrom(returnType)) {
+            return resolveFlowReturningOutputType(returnType)
         }
 
+        // Handle @Agentic classes (e.g., @Subflow) - recursively resolve to get final output type
+        if (isAgenticClass(returnType)) {
+            val resolved = resolveAgenticClassOutputType(returnType, mutableSetOf())
+            if (resolved != null) {
+                return resolved
+            }
+        }
+
+        return returnType
+    }
+
+    private fun resolveFlowReturningOutputType(returnType: Class<*>): Class<*> {
         // Find the Workflow interface in the class hierarchy and extract its type argument
         for (genericInterface in returnType.genericInterfaces) {
             if (genericInterface is ParameterizedType &&
@@ -561,6 +578,105 @@ class AgentMetadataReader(
         // If we couldn't extract the type argument, just use the workflow class
         logger.debug("Could not extract output type from Workflow, using {} directly", returnType.simpleName)
         return returnType
+    }
+
+    /**
+     * Check if a class has @Agentic annotation (directly or via meta-annotation like @Subflow, @Agent).
+     */
+    private fun isAgenticClass(clazz: Class<*>): Boolean {
+        if (clazz.isAnnotationPresent(Agentic::class.java)) {
+            return true
+        }
+        return clazz.annotations.any { annotation ->
+            annotation.annotationClass.java.isAnnotationPresent(Agentic::class.java)
+        }
+    }
+
+    /**
+     * Extract the output type from an @Agentic class by analyzing its goals.
+     * Recursively resolves if the output type is itself @Agentic.
+     */
+    private fun resolveAgenticClassOutputType(clazz: Class<*>, visited: MutableSet<Class<*>>): Class<*>? {
+        // Prevent infinite recursion
+        if (clazz in visited) {
+            logger.debug("Cycle detected in @Agentic class resolution: {}", clazz.simpleName)
+            return null
+        }
+        visited.add(clazz)
+
+        try {
+            val dummyInstance = createDummyInstance(clazz) ?: return null
+            val metadata = createAgentMetadata(dummyInstance) ?: return null
+
+            val outputType = FlowNestingManager.DEFAULT.getOutputType(metadata) ?: return null
+
+            // If the output type is itself @Agentic, recursively resolve
+            if (isAgenticClass(outputType)) {
+                logger.debug(
+                    "@Agentic class {} has output type {} which is also @Agentic, resolving recursively",
+                    clazz.simpleName,
+                    outputType.simpleName
+                )
+                val recursiveResult = resolveAgenticClassOutputType(outputType, visited)
+                if (recursiveResult != null) {
+                    logger.debug(
+                        "Resolved @Agentic chain {} -> {} -> {}",
+                        clazz.simpleName,
+                        outputType.simpleName,
+                        recursiveResult.simpleName
+                    )
+                    return recursiveResult
+                }
+            }
+
+            logger.debug(
+                "@Agentic class {} has goal output type {}, using {} as effective output type",
+                clazz.simpleName,
+                outputType.simpleName,
+                outputType.simpleName
+            )
+            return outputType
+        } catch (e: Exception) {
+            logger.debug(
+                "Could not analyze @Agentic class {} to determine output type: {}",
+                clazz.simpleName,
+                e.message
+            )
+            return null
+        }
+    }
+
+    /**
+     * Create a dummy instance of the given type for method invocation during metadata discovery.
+     */
+    private fun createDummyInstance(type: Class<*>): Any? {
+        return when {
+            type == String::class.java -> ""
+            type == Int::class.java || type == java.lang.Integer::class.java -> 0
+            type == Long::class.java || type == java.lang.Long::class.java -> 0L
+            type == Double::class.java || type == java.lang.Double::class.java -> 0.0
+            type == Float::class.java || type == java.lang.Float::class.java -> 0.0f
+            type == Boolean::class.java || type == java.lang.Boolean::class.java -> false
+            type.isEnum -> type.enumConstants?.firstOrNull()
+            else -> try {
+                val kClass = type.kotlin
+                val constructor = kClass.primaryConstructor ?: kClass.constructors.firstOrNull()
+                if (constructor != null) {
+                    val argMap = constructor.parameters
+                        .filter { !it.isOptional }
+                        .associateWith { param ->
+                            val paramClass = param.type.classifier as? kotlin.reflect.KClass<*>
+                            createDummyInstance(paramClass?.java ?: Any::class.java)
+                        }
+                    constructor.callBy(argMap)
+                } else {
+                    type.getDeclaredConstructor().newInstance()
+                }
+            } catch (e: Exception) {
+                logger.trace("Could not create dummy instance of {}: {}", type.name, e.message)
+                null
+            }
+        }
     }
 }
 
