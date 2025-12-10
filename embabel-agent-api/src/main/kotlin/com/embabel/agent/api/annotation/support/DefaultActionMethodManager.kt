@@ -162,26 +162,14 @@ internal class DefaultActionMethodManager(
         visited.add(clazz)
 
         try {
-            // Create a dummy instance to read metadata
-            val dummyInstance = createDummyInstance(clazz)
-            if (dummyInstance == null) {
-                logger.debug("Could not create dummy instance for @Agentic class {}", clazz.simpleName)
-                return null
-            }
-            val metadata = AgentMetadataReader().createAgentMetadata(dummyInstance)
-            if (metadata == null) {
-                logger.debug("Could not create metadata for @Agentic class {}", clazz.simpleName)
+            // Find goal methods using reflection - no instance needed
+            val goalMethod = findGoalMethodInClass(clazz)
+            if (goalMethod == null) {
+                logger.debug("No goal method found in @Agentic class {}", clazz.simpleName)
                 return null
             }
 
-            val outputType = FlowNestingManager.DEFAULT.getOutputType(metadata)
-            if (outputType == null) {
-                logger.debug(
-                    "Could not determine output type from @Agentic class {}, using class directly",
-                    clazz.simpleName
-                )
-                return null
-            }
+            val outputType = goalMethod.returnType
 
             // If the output type is itself @Agentic, recursively resolve
             if (isAgenticClass(outputType)) {
@@ -217,6 +205,31 @@ internal class DefaultActionMethodManager(
             )
             return null
         }
+    }
+
+    /**
+     * Find the goal method in a class using reflection.
+     * A goal method is one with @AchievesGoal annotation or @Action(goal="...").
+     */
+    private fun findGoalMethodInClass(clazz: Class<*>): Method? {
+        val goalMethods = mutableListOf<Method>()
+        ReflectionUtils.doWithMethods(
+            clazz,
+            { method -> goalMethods.add(method) },
+            { method ->
+                // Check for @AchievesGoal annotation
+                if (method.isAnnotationPresent(com.embabel.agent.api.annotation.AchievesGoal::class.java)) {
+                    return@doWithMethods true
+                }
+                // Check for @Action(goal="...")
+                val actionAnnotation = method.getAnnotation(com.embabel.agent.api.annotation.Action::class.java)
+                if (actionAnnotation != null && actionAnnotation.goal.isNotBlank()) {
+                    return@doWithMethods true
+                }
+                false
+            }
+        )
+        return goalMethods.firstOrNull()
     }
 
     /**

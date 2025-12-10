@@ -24,7 +24,6 @@ import com.embabel.agent.api.common.PlannerType
 import com.embabel.agent.api.common.StuckHandler
 import com.embabel.agent.api.common.ToolObject
 import com.embabel.agent.api.common.subflow.FlowReturning
-import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.core.*
 import com.embabel.agent.core.Export
 import com.embabel.agent.core.support.NIRVANA
@@ -49,7 +48,6 @@ import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Proxy
 import kotlin.reflect.KClass
-import kotlin.reflect.full.primaryConstructor
 import com.embabel.agent.core.Action as CoreAction
 import com.embabel.agent.core.Agent as CoreAgent
 import com.embabel.agent.core.Condition as CoreCondition
@@ -612,8 +610,11 @@ class AgentMetadataReader(
     }
 
     /**
-     * Extract the output type from an @Agentic class by analyzing its goals.
+     * Extract the output type from an @Agentic class by analyzing its goal methods using reflection.
      * Recursively resolves if the output type is itself @Agentic.
+     *
+     * Looks for methods annotated with @AchievesGoal or @Action(goal="...") and returns the
+     * return type of the first goal method found.
      */
     private fun resolveAgenticClassOutputType(clazz: Class<*>, visited: MutableSet<Class<*>>): Class<*>? {
         // Prevent infinite recursion
@@ -624,10 +625,14 @@ class AgentMetadataReader(
         visited.add(clazz)
 
         try {
-            val dummyInstance = createDummyInstance(clazz) ?: return null
-            val metadata = createAgentMetadata(dummyInstance) ?: return null
+            // Find goal methods using reflection - no instance needed
+            val goalMethod = findGoalMethodInClass(clazz)
+            if (goalMethod == null) {
+                logger.debug("No goal method found in @Agentic class {}", clazz.simpleName)
+                return null
+            }
 
-            val outputType = FlowNestingManager.DEFAULT.getOutputType(metadata) ?: return null
+            val outputType = goalMethod.returnType
 
             // If the output type is itself @Agentic, recursively resolve
             if (isAgenticClass(outputType)) {
@@ -666,36 +671,28 @@ class AgentMetadataReader(
     }
 
     /**
-     * Create a dummy instance of the given type for method invocation during metadata discovery.
+     * Find the goal method in a class using reflection.
+     * A goal method is one with @AchievesGoal annotation or @Action(goal="...").
      */
-    private fun createDummyInstance(type: Class<*>): Any? {
-        return when {
-            type == String::class.java -> ""
-            type == Int::class.java || type == java.lang.Integer::class.java -> 0
-            type == Long::class.java || type == java.lang.Long::class.java -> 0L
-            type == Double::class.java || type == java.lang.Double::class.java -> 0.0
-            type == Float::class.java || type == java.lang.Float::class.java -> 0.0f
-            type == Boolean::class.java || type == java.lang.Boolean::class.java -> false
-            type.isEnum -> type.enumConstants?.firstOrNull()
-            else -> try {
-                val kClass = type.kotlin
-                val constructor = kClass.primaryConstructor ?: kClass.constructors.firstOrNull()
-                if (constructor != null) {
-                    val argMap = constructor.parameters
-                        .filter { !it.isOptional }
-                        .associateWith { param ->
-                            val paramClass = param.type.classifier as? kotlin.reflect.KClass<*>
-                            createDummyInstance(paramClass?.java ?: Any::class.java)
-                        }
-                    constructor.callBy(argMap)
-                } else {
-                    type.getDeclaredConstructor().newInstance()
+    private fun findGoalMethodInClass(clazz: Class<*>): Method? {
+        val goalMethods = mutableListOf<Method>()
+        ReflectionUtils.doWithMethods(
+            clazz,
+            { method -> goalMethods.add(method) },
+            { method ->
+                // Check for @AchievesGoal annotation
+                if (method.isAnnotationPresent(AchievesGoal::class.java)) {
+                    return@doWithMethods true
                 }
-            } catch (e: Exception) {
-                logger.trace("Could not create dummy instance of {}: {}", type.name, e.message)
-                null
+                // Check for @Action(goal="...")
+                val actionAnnotation = method.getAnnotation(Action::class.java)
+                if (actionAnnotation != null && actionAnnotation.goal.isNotBlank()) {
+                    return@doWithMethods true
+                }
+                false
             }
-        }
+        )
+        return goalMethods.firstOrNull()
     }
 }
 
