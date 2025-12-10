@@ -146,7 +146,7 @@ For example, multiple groups within an organization can contribute their own `@E
 ==== Nested Workflows
 
 Nested workflows provide explicit sub-processes within any agent.
-*Any action can enter a nested workflow by returning a class that implements the `Workflow<O>` interface.*
+*Any action can enter a nested workflow by returning an `@Agentic` class (such as `@Agent` or `@Subflow`) with a single goal.*
 This works with both GOAP and Utility planners--there is no separate "state machine planner."
 
 Unlike LangGraph, Embabel workflows are fully typesafe and enjoy the benefits of GOAP planning within each workflow.
@@ -160,12 +160,15 @@ Unlike LangGraph, Embabel workflows are fully typesafe and enjoy the benefits of
 
 ===== How Nested Workflows Work
 
-The key insight is simple: **returning a `Workflow<O>` class from an action enters that workflow as a nested agent.**
+The key insight is simple: **returning an `@Agentic` class from an action enters that workflow as a nested agent.**
 
-1. When an action returns a `Workflow<O>` class instance, the process enters that workflow
-2. The type parameter `O` (via `outputType` property) declares what type the workflow ultimately produces
-3. Within each workflow, GOAP plans which action to execute based on preconditions and effects
-4. When an action has `@AchievesGoal`, the workflow completes and returns its result
+For GOAP planning, the nested class must have exactly one business goal (defined via `@AchievesGoal`) so the planner knows the output type.
+For Utility AI planning, any `@Agentic` class with actions can be nested.
+
+1. When an action returns an `@Agentic` class instance (e.g., `@Subflow` or `@Agent`), the process enters that workflow
+2. The goal's output type (from `@AchievesGoal`) tells the planner what type the workflow produces
+3. Within each workflow, the planner selects which action to execute based on preconditions and effects
+4. When an action with `@AchievesGoal` completes, the workflow finishes and returns its result
 5. The workflow's result replaces the workflow object on the parent's blackboard
 
 ===== Example: Write and Review Workflow
@@ -349,44 +352,56 @@ fun decide(assessment: Assessment): StoryFlow {  // Returns interface type
 ----
 
 [[reference.planners__subflow]]
-===== @Subflow: Simplified Nesting for Utility AI
+===== @Subflow and @Agent for Nested Workflows
 
-When using the Utility planner, you can use a simpler nesting pattern with the `@Subflow` annotation.
-Unlike `FlowReturning<O>`, `@Subflow` doesn't require specifying an output type--which makes sense because Utility AI doesn't need goal-oriented planning.
+Any `@Agentic` class (including `@Subflow` and `@Agent`) can be used as a nested workflow.
+The key requirement for GOAP planning is that the class has **exactly one business goal** (via `@AchievesGoal`), which tells the planner what output type to expect.
 
 [source,kotlin]
 ----
 @Subflow  // <1>
 class ProcessingPhase(val data: String) {
-    // @Action methods go here
+
+    @Action
+    @AchievesGoal(description = "Process the data")  // <2>
+    fun process(): ProcessedData {
+        return ProcessedData(data.uppercase())
+    }
 }
 ----
 
-<1> Marker annotation - classes just need the annotation and `@Action` methods
+<1> `@Subflow` marks this class as agentic (can be run as nested agent)
+<2> Single `@AchievesGoal` enables use with both GOAP and Utility planners
 
-====== When to Use @Subflow vs FlowReturning
+====== Planner Support for Nested Classes
 
 [cols="1,2,2",options="header"]
 |===
-|Type |Use When |Planner Support
+|Type |GOAP Support |Utility Support
 
-|`FlowReturning<O>`
-|You need GOAP planning in the nested flow, or want to declare the output type
-|GOAP and Utility
+|`@Subflow` with single goal
+|Yes - output type inferred from goal
+|Yes
 
-|`@Subflow`
-|Using Utility AI and don't need to specify output type
-|Utility only
+|`@Subflow` with multiple goals
+|No - ambiguous output type
+|Yes
 
-|`@Agent` class
-|Composing existing Spring-managed agents
-|Utility only (meta-annotated with @Agentic)
+|`@Agent` with single goal
+|Yes - output type inferred from goal
+|Yes
+
+|`@Agent` with multiple goals
+|No - ambiguous output type
+|Yes
+
+|`FlowReturning<O>` (legacy)
+|Yes - output type explicit
+|Yes
 |===
 
-IMPORTANT: `@Subflow` nesting only works with the Utility planner.
-If you try to return a `@Subflow` instance from an action when using GOAP, the raw object will be returned (not executed as a nested agent).
-
-NOTE: The `@Agent` annotation is meta-annotated with `@Agentic`, so any `@Agent` class can also be used as a nested agent with Utility AI.
+TIP: For GOAP compatibility, ensure your nested class has exactly one `@AchievesGoal` annotation.
+Utility AI is more flexible and works with any number of goals.
 
 ====== Example: @Subflow with Utility AI
 
@@ -450,7 +465,8 @@ class ProcessingPhase(val data: String) {
 [[reference.planners__nested_agents]]
 ===== @Agent Classes as Nested Agents
 
-Since `@Agent` is meta-annotated with `@Agentic`, any `@Agent` class can be returned from actions when using Utility AI.
+Since `@Agent` is meta-annotated with `@Agentic`, any `@Agent` class can be returned from actions.
+With a single goal, it works with both GOAP and Utility planners.
 This enables injecting agents as dependencies and delegating work to them.
 
 [source,kotlin]
@@ -459,22 +475,25 @@ This enables injecting agents as dependencies and delegating work to them.
 class TextProcessorAgent {  // <1>
 
     @Action
-    @AchievesGoal(description = "Process text")
+    @AchievesGoal(description = "Process text")  // <2>
     fun process(input: UserInput): ProcessedText = ProcessedText(input.content.uppercase())
 }
 
-@Agent(description = "Orchestrator agent", planner = PlannerType.UTILITY)
+@Agent(description = "Orchestrator agent")  // <3>
 class OrchestratorAgent {
 
     @Action
-    fun delegateProcessing(input: UserInput): TextProcessorAgent {  // <2>
+    @AchievesGoal(description = "Delegate and process")
+    fun delegateProcessing(input: UserInput): TextProcessorAgent {  // <4>
         return TextProcessorAgent()
     }
 }
 ----
 
 <1> The nested `@Agent` class has its own actions and goals
-<2> Returning an `@Agent` instance runs it as a nested agent (Utility AI only)
+<2> Single goal enables GOAP compatibility
+<3> Works with GOAP (default) because nested agent has single goal
+<4> Returning an `@Agent` instance runs it as a nested agent
 
 ====== Chaining Nested Types
 
@@ -513,5 +532,5 @@ class ProcessingSubflow(val data: String) {
 <1> Start by delegating to an `@Agent` class
 <2> The `@Agent` can return a `@Subflow` to continue processing
 
-IMPORTANT: `@Subflow` and `@Agent` class nesting only works with the Utility planner.
-If you try to return a `@Subflow` or `@Agent` instance when using GOAP, the raw object will be returned (not executed as a nested agent).
+IMPORTANT: For GOAP planning, nested `@Subflow` and `@Agent` classes must have exactly one business goal (via `@AchievesGoal`).
+Classes with multiple goals can only be nested when using the Utility planner, which doesn't need a predetermined output type.

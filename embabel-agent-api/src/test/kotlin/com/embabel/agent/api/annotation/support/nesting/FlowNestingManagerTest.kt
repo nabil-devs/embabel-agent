@@ -36,11 +36,13 @@ import com.embabel.agent.core.Agent as CoreAgent
 data class ProcessedData(val content: String)
 
 /**
- * Tests for @Subflow pattern where classes annotated with @Subflow can be
- * returned from actions when using Utility AI planner.
+ * Tests for nested agent patterns where @Agentic classes (@Subflow, @Agent) can be
+ * returned from actions.
  *
- * Unlike FlowReturning<O>, @Subflow doesn't require specifying an output type,
- * which is suitable for Utility AI where goal-oriented planning isn't needed.
+ * For GOAP planning: requires exactly one business goal (excluding NIRVANA) to determine output type.
+ * For Utility AI planning: any @Agentic class with actions can be run.
+ *
+ * FlowReturning is still supported for backward compatibility.
  */
 class FlowNestingManagerTest {
 
@@ -117,15 +119,33 @@ class FlowNestingManagerTest {
         }
 
         @Test
-        fun `@Subflow is NOT runnable with GOAP planner`() {
+        fun `@Subflow with single goal IS runnable with GOAP planner`() {
+            // SimpleSubflow has exactly one @AchievesGoal, so it should be runnable with GOAP
             val scope = SimpleSubflow("test")
-            assertFalse(runner.isRunnableNestedAgent(scope, PlannerType.GOAP))
+            assertTrue(
+                runner.isRunnableNestedAgent(scope, PlannerType.GOAP),
+                "@Subflow with single goal should be runnable with GOAP"
+            )
         }
 
         @Test
         fun `@Subflow IS runnable with UTILITY planner`() {
             val scope = SimpleSubflow("test")
             assertTrue(runner.isRunnableNestedAgent(scope, PlannerType.UTILITY))
+        }
+
+        @Test
+        fun `@Subflow with multiple goals is NOT runnable with GOAP planner`() {
+            val scope = MultiGoalSubflow("test")
+            assertFalse(
+                runner.isRunnableNestedAgent(scope, PlannerType.GOAP),
+                "@Subflow with multiple goals should NOT be runnable with GOAP"
+            )
+            // But should still be runnable with Utility
+            assertTrue(
+                runner.isRunnableNestedAgent(scope, PlannerType.UTILITY),
+                "@Subflow with multiple goals should be runnable with UTILITY"
+            )
         }
 
         @Test
@@ -311,15 +331,33 @@ class FlowNestingManagerTest {
     inner class AgentClassRunnableDetection {
 
         @Test
-        fun `@Agent class is NOT runnable with GOAP planner`() {
+        fun `@Agent class with single goal IS runnable with GOAP planner`() {
+            // NestedAgentProcessor has exactly one @AchievesGoal, so it should be runnable with GOAP
             val agent = NestedAgentProcessor()
-            assertFalse(runner.isRunnableNestedAgent(agent, PlannerType.GOAP))
+            assertTrue(
+                runner.isRunnableNestedAgent(agent, PlannerType.GOAP),
+                "@Agent with single goal should be runnable with GOAP"
+            )
         }
 
         @Test
         fun `@Agent class IS runnable with UTILITY planner`() {
             val agent = NestedAgentProcessor()
             assertTrue(runner.isRunnableNestedAgent(agent, PlannerType.UTILITY))
+        }
+
+        @Test
+        fun `@Agent class with multiple goals is NOT runnable with GOAP planner`() {
+            val agent = MultiGoalAgent()
+            assertFalse(
+                runner.isRunnableNestedAgent(agent, PlannerType.GOAP),
+                "@Agent with multiple goals should NOT be runnable with GOAP"
+            )
+            // But should still be runnable with Utility
+            assertTrue(
+                runner.isRunnableNestedAgent(agent, PlannerType.UTILITY),
+                "@Agent with multiple goals should be runnable with UTILITY"
+            )
         }
     }
 
@@ -380,11 +418,68 @@ class FlowNestingManagerTest {
             assertEquals("processed: chain-test", (result as ProcessedData).content)
         }
     }
+
+    @Nested
+    inner class GoapNestedExecution {
+
+        @Test
+        fun `GOAP agent returning single-goal @Subflow executes nested flow`() {
+            val agent = GoapAgentWithSubflow()
+            val metadata = reader.createAgentMetadata(agent)
+            assertNotNull(metadata)
+
+            val ap = IntegrationTestUtils.dummyAgentPlatform()
+            val agentProcess = ap.runAgentFrom(
+                metadata as CoreAgent,
+                ProcessOptions().withPlannerType(PlannerType.GOAP),
+                mapOf("it" to UserInput("goap-test"))
+            )
+
+            assertTrue(
+                agentProcess.status == AgentProcessStatusCode.COMPLETED ||
+                    agentProcess.status == AgentProcessStatusCode.STUCK,
+                "Agent should at least have run, but status was: ${agentProcess.status}"
+            )
+
+            val result = agentProcess.lastResult()
+            assertTrue(
+                result is ProcessedData,
+                "Expected ProcessedData but got $result (objects: ${agentProcess.objects})"
+            )
+            assertEquals("processed: goap-test", (result as ProcessedData).content)
+        }
+    }
 }
 
 // Empty @Agent class - no @Action methods, should not be runnable
 @Agent(description = "Empty agent")
 class EmptyAgentClass
+
+// @Agent class with multiple goals - should NOT be runnable with GOAP
+@Agent(description = "Multi-goal agent")
+class MultiGoalAgent {
+
+    @Action
+    @AchievesGoal(description = "First goal")
+    fun firstGoal(it: UserInput): ProcessedData = ProcessedData("first: ${it.content}")
+
+    @Action
+    @AchievesGoal(description = "Second goal")
+    fun secondGoal(it: UserInput): ProcessedData = ProcessedData("second: ${it.content}")
+}
+
+// @Subflow class with multiple goals - should NOT be runnable with GOAP
+@Subflow
+class MultiGoalSubflow(val data: String) {
+
+    @Action
+    @AchievesGoal(description = "Process A")
+    fun processA(): ProcessedData = ProcessedData("A: $data")
+
+    @Action
+    @AchievesGoal(description = "Process B")
+    fun processB(): ProcessedData = ProcessedData("B: $data")
+}
 
 // Simple @Agent class with one action - uses UserInput from blackboard instead of constructor param
 @Agent(description = "Nested agent processor")
@@ -442,6 +537,17 @@ class FinalizingSubflow(val data: ProcessedData) {
 class UtilityAgentWithSubflow {
 
     @Action
+    fun enterScope(it: UserInput): SimpleSubflow {
+        return SimpleSubflow(it.content)
+    }
+}
+
+// GOAP agent that returns a single-goal @Subflow - should work with GOAP
+@Agent(description = "GOAP agent with @Subflow", planner = PlannerType.GOAP)
+class GoapAgentWithSubflow {
+
+    @Action
+    @AchievesGoal(description = "Process input through nested subflow")
     fun enterScope(it: UserInput): SimpleSubflow {
         return SimpleSubflow(it.content)
     }
