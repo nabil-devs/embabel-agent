@@ -23,6 +23,7 @@ import com.embabel.agent.core.Agent
 import com.embabel.agent.core.AgentProcessStatusCode
 import com.embabel.agent.core.AgentScope
 import com.embabel.agent.core.Goal
+import com.embabel.agent.core.JvmType
 import com.embabel.agent.core.ProcessContext
 import com.embabel.plan.utility.UtilityPlanner
 import org.slf4j.LoggerFactory
@@ -99,8 +100,43 @@ internal class FlowNestingManager(
     /**
      * Get the business goals from an agent scope, excluding the synthetic NIRVANA goal.
      */
-    private fun getBusinessGoals(scope: AgentScope): List<Goal> {
+    internal fun getBusinessGoals(scope: AgentScope): List<Goal> {
         return scope.goals.filter { it.name != UtilityPlanner.NIRVANA }
+    }
+
+    /**
+     * Extract the output type from an AgentScope if it has exactly one business goal with an outputType.
+     * This is used to determine the effective output type when an action returns an AgentScope.
+     *
+     * @param scope The AgentScope to extract the output type from
+     * @return The output Class if there's exactly one business goal with an outputType, null otherwise
+     */
+    fun getOutputType(scope: AgentScope): Class<*>? {
+        val businessGoals = getBusinessGoals(scope)
+        if (businessGoals.size != 1) {
+            logger.debug(
+                "Cannot determine output type: AgentScope {} has {} business goals (expected 1)",
+                scope.name,
+                businessGoals.size
+            )
+            return null
+        }
+        val goal = businessGoals.first()
+        val outputType = goal.outputType
+        if (outputType == null) {
+            logger.debug(
+                "Cannot determine output type: Goal {} has no outputType",
+                goal.name
+            )
+            return null
+        }
+        return when (outputType) {
+            is JvmType -> outputType.clazz
+            else -> {
+                logger.debug("Cannot determine output type: Goal {} has non-JVM outputType {}", goal.name, outputType)
+                null
+            }
+        }
     }
 
     /**

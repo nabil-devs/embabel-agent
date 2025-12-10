@@ -18,8 +18,10 @@ package com.embabel.agent.api.annotation.support
 import com.embabel.agent.api.annotation.AwaitableResponseException
 import com.embabel.agent.api.common.TransformationActionContext
 import com.embabel.agent.api.common.subflow.FlowReturning
+import com.embabel.agent.api.common.support.FlowNestingManager
 import com.embabel.agent.api.common.support.MultiTransformationAction
 import com.embabel.agent.core.Action
+import com.embabel.agent.core.AgentScope
 import com.embabel.agent.core.IoBinding
 import com.embabel.agent.core.ToolGroupRequirement
 import org.slf4j.LoggerFactory
@@ -32,6 +34,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
+import kotlin.reflect.full.primaryConstructor
 import kotlin.reflect.full.valueParameters
 import kotlin.reflect.jvm.isAccessible
 import kotlin.reflect.jvm.kotlinFunction
@@ -67,8 +70,8 @@ internal class DefaultActionMethodManager(
 
         require(method.returnType != null) { "Action method ${method.name} must have a return type" }
 
-        // Check if the return type is a Workflow - if so, the actual output is the Workflow's outputType
-        val outputClass = resolveOutputClass(method.returnType)
+        // Check if the return type is a Workflow or AgentScope - if so, resolve the actual output type
+        val outputClass = resolveOutputClass(method, instance)
 
         return MultiTransformationAction(
             name = nameGenerator.generateName(instance, method.name),
@@ -97,14 +100,31 @@ internal class DefaultActionMethodManager(
 
     /**
      * Resolve the effective output class for an action method.
-     * If the return type implements Workflow<O>, try to infer O from the generic type.
-     * Otherwise, return the method's return type directly.
+     * - If the return type implements FlowReturning<O>, extract O from the generic type.
+     * - If the return type is AgentScope/Agent, invoke the method to get the instance and
+     *   extract the output type from its single business goal.
+     * - Otherwise, return the method's return type directly.
      */
-    private fun resolveOutputClass(returnType: Class<*>): Class<*> {
-        if (!FlowReturning::class.java.isAssignableFrom(returnType)) {
-            return returnType
+    private fun resolveOutputClass(method: Method, instance: Any): Class<*> {
+        val returnType = method.returnType
+
+        // Handle FlowReturning<O> - extract O from generic type
+        if (FlowReturning::class.java.isAssignableFrom(returnType)) {
+            return resolveFlowReturningOutputClass(returnType)
         }
 
+        // Handle AgentScope/Agent - invoke method to get instance and extract output from goals
+        if (AgentScope::class.java.isAssignableFrom(returnType)) {
+            return resolveAgentScopeOutputClass(method, instance) ?: returnType
+        }
+
+        return returnType
+    }
+
+    /**
+     * Extract the output type from a FlowReturning class by inspecting its generic type parameter.
+     */
+    private fun resolveFlowReturningOutputClass(returnType: Class<*>): Class<*> {
         // Find the Workflow interface in the class hierarchy and extract its type argument
         for (genericInterface in returnType.genericInterfaces) {
             if (genericInterface is ParameterizedType &&
@@ -125,6 +145,84 @@ internal class DefaultActionMethodManager(
         // If we couldn't extract the type argument, just use the workflow class
         logger.debug("Could not extract output type from Workflow, using {} directly", returnType.simpleName)
         return returnType
+    }
+
+    /**
+     * Extract the output type from an AgentScope-returning method by invoking it with dummy arguments.
+     * The output type is determined by the single business goal's satisfiedBy type.
+     */
+    private fun resolveAgentScopeOutputClass(method: Method, instance: Any): Class<*>? {
+        try {
+            // Create dummy arguments for the method invocation
+            val args = method.parameters.map { param ->
+                createDummyInstance(param.type)
+            }.toTypedArray()
+
+            method.isAccessible = true
+            val agentScope = method.invoke(instance, *args) as? AgentScope
+            if (agentScope == null) {
+                logger.debug("Method {} did not return an AgentScope", method.name)
+                return null
+            }
+
+            val outputType = FlowNestingManager.DEFAULT.getOutputType(agentScope)
+            if (outputType != null) {
+                logger.debug(
+                    "Action {} returns AgentScope with goal output type {}, using {} as action output type",
+                    method.name,
+                    outputType.simpleName,
+                    outputType.simpleName
+                )
+            } else {
+                logger.debug(
+                    "Could not determine output type from AgentScope returned by {}, using AgentScope directly",
+                    method.name
+                )
+            }
+            return outputType
+        } catch (e: Exception) {
+            logger.debug(
+                "Could not invoke method {} to determine AgentScope output type: {}",
+                method.name,
+                e.message
+            )
+            return null
+        }
+    }
+
+    /**
+     * Create a dummy instance of the given type for method invocation during metadata discovery.
+     * This is used to invoke action methods that return AgentScope to discover their output types.
+     */
+    private fun createDummyInstance(type: Class<*>): Any? {
+        return when {
+            type == String::class.java -> ""
+            type == Int::class.java || type == java.lang.Integer::class.java -> 0
+            type == Long::class.java || type == java.lang.Long::class.java -> 0L
+            type == Double::class.java || type == java.lang.Double::class.java -> 0.0
+            type == Float::class.java || type == java.lang.Float::class.java -> 0.0f
+            type == Boolean::class.java || type == java.lang.Boolean::class.java -> false
+            type.isEnum -> type.enumConstants?.firstOrNull()
+            else -> try {
+                // Try to create an instance using the primary constructor with dummy values
+                val kClass = type.kotlin
+                val constructor = kClass.primaryConstructor ?: kClass.constructors.firstOrNull()
+                if (constructor != null) {
+                    val argMap = constructor.parameters
+                        .filter { !it.isOptional }
+                        .associateWith { param ->
+                            val paramClass = param.type.classifier as? KClass<*>
+                            createDummyInstance(paramClass?.java ?: Any::class.java)
+                        }
+                    constructor.callBy(argMap)
+                } else {
+                    type.getDeclaredConstructor().newInstance()
+                }
+            } catch (e: Exception) {
+                logger.trace("Could not create dummy instance of {}: {}", type.name, e.message)
+                null
+            }
+        }
     }
 
     private fun resolveInputBindings(
